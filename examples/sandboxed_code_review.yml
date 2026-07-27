@@ -1,0 +1,68 @@
+---
+# Example: Run a sandboxed code review.
+#
+# Creates a sandbox, clones a repo into it, runs a linter, and
+# cleans up. The sandbox is fully isolated — network policy, filesystem
+# restrictions, and process controls are enforced by OpenShell.
+#
+# Usage:
+#   ansible-playbook examples/sandboxed_code_review.yml \
+#     -e repo_url=https://github.com/myorg/myapp.git
+#
+# Auth via environment variables:
+#   export OPENSHELL_GATEWAY_URL=https://openshell.apps.example.com
+#   export OPENSHELL_TLS_CERT=/certs/tls.crt
+#   export OPENSHELL_TLS_KEY=/certs/tls.key
+#   export OPENSHELL_TLS_CA=/certs/ca.crt
+
+- name: Sandboxed code review
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    repo_url: "https://github.com/ansible/ansible.git"
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+
+  tasks:
+    - name: Verify gateway is healthy
+      aknochow.openshell.gateway_info: {}
+      register: gw
+
+    - name: Fail if gateway is down
+      ansible.builtin.fail:
+        msg: "Gateway is not healthy: {{ gw.status }}"
+      when: not gw.healthy
+
+    - name: Create review sandbox
+      aknochow.openshell.sandbox:
+        image: "{{ sandbox_image }}"
+        environment:
+          REPO_URL: "{{ repo_url }}"
+        state: present
+      register: sandbox
+
+    - name: Clone the repo
+      aknochow.openshell.sandbox_exec:
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command: ["git", "clone", "--depth=1", "{{ repo_url }}", "/workspace/repo"]
+        command_timeout: 120
+
+    - name: Run linter
+      aknochow.openshell.sandbox_exec:
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command:
+          - /bin/sh
+          - -c
+          - "cd /workspace/repo && find . -name '*.py' -maxdepth 2 | head -20 | xargs python3 -m py_compile 2>&1 || true"
+        command_timeout: 60
+      register: lint
+
+    - name: Show findings
+      ansible.builtin.debug:
+        msg: "{{ lint.stdout_lines }}"
+
+    - name: Clean up
+      aknochow.openshell.sandbox:
+        name: "{{ sandbox.sandbox.name }}"
+        state: absent

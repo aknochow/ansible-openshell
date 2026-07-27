@@ -1,0 +1,103 @@
+---
+# Example: Run multiple AI coding agents in parallel sandboxes.
+#
+# Providers are configured on the gateway — sandboxes reference them
+# by name. Each sandbox gets the provider's credentials injected
+# automatically by the gateway.
+#
+# Prerequisites:
+#   openshell provider create vertex --type google-vertex-ai --credential api_key=...
+#
+# Usage:
+#   ansible-playbook examples/multi_agent.yml
+#
+# Auth via environment variables:
+#   export OPENSHELL_GATEWAY_URL=https://openshell.apps.example.com
+#   export OPENSHELL_TLS_CERT=/certs/tls.crt
+#   export OPENSHELL_TLS_KEY=/certs/tls.key
+#   export OPENSHELL_TLS_CA=/certs/ca.crt
+
+- name: Multi-agent sandbox comparison
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+    prompt: "Write a Python function that checks if a string is a valid IPv4 address without using the ipaddress module."
+
+    agents:
+      - name: claude-agent
+        provider: vertex
+        command:
+          - claude
+          - --print
+          - "{{ prompt }}"
+
+      - name: opencode-agent
+        provider: vertex
+        command:
+          - opencode
+          - --prompt
+          - "{{ prompt }}"
+
+  tasks:
+    # --- Create sandboxes with provider ---
+    - name: Create agent sandboxes
+      aknochow.openshell.sandbox:
+        name: "{{ item.name }}"
+        image: "{{ sandbox_image }}"
+        providers:
+          - "{{ item.provider }}"
+        state: present
+      loop: "{{ agents }}"
+      loop_control:
+        label: "{{ item.name }}"
+      register: sandboxes
+
+    # --- Run agents in parallel ---
+    - name: Run agent tasks (async)
+      aknochow.openshell.sandbox_exec:
+        sandbox: "{{ item.0.sandbox.id }}"
+        command: "{{ item.1.command }}"
+        command_timeout: 120
+      loop: "{{ sandboxes.results | zip(agents) | list }}"
+      loop_control:
+        label: "{{ item.1.name }}"
+      async: 300
+      poll: 0
+      register: jobs
+
+    - name: Wait for all agents to finish
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ jobs.results }}"
+      loop_control:
+        label: "{{ agents[idx].name }}"
+        index_var: idx
+      register: results
+      until: results.finished
+      retries: 60
+      delay: 5
+
+    # --- Collect and display results ---
+    - name: Show agent outputs
+      ansible.builtin.debug:
+        msg: |
+          === {{ agents[idx].name }} ({{ agents[idx].provider }}) ===
+          Exit code: {{ item.rc }}
+          Output:
+          {{ item.stdout }}
+      loop: "{{ results.results }}"
+      loop_control:
+        label: "{{ agents[idx].name }}"
+        index_var: idx
+
+    # --- Cleanup ---
+    - name: Delete agent sandboxes
+      aknochow.openshell.sandbox:
+        name: "{{ item.name }}"
+        state: absent
+      loop: "{{ agents }}"
+      loop_control:
+        label: "{{ item.name }}"

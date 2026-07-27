@@ -1,0 +1,403 @@
+---
+# Comprehensive test suite for aknochow.openshell collection.
+# Covers: provider CRUD, stdin, create-without-wait, env at create time,
+# sandbox_exec edge cases, multi-sandbox management, and error paths.
+#
+# Usage:
+#   ansible-playbook tests/test_comprehensive.yml -e gateway_name=openshell
+
+- name: "aknochow.openshell comprehensive test suite"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    gateway_name: "openshell"
+    gateways:
+      "127.0.0.1":
+        url: "http://127.0.0.1:8081"
+        tls_cert: null
+        tls_key: null
+        tls_ca: null
+      openshell:
+        url: "https://127.0.0.1:17670"
+        tls_cert: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.crt"
+        tls_key: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.key"
+        tls_ca: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/ca.crt"
+
+    gw: "{{ gateways[gateway_name] }}"
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+    tls_args:
+      tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+      tls_key: "{{ gw.tls_key | default(omit, true) }}"
+      tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+
+  tasks:
+    # =========================================================================
+    # 1. PROVIDER MODULE TESTS
+    # =========================================================================
+
+    - name: "PROVIDER: Create a test provider"
+      aknochow.openshell.provider:
+        gateway: "{{ gw.url }}"
+        name: "test-provider"
+        type: "generic"
+        credentials:
+          api_key: "test-key-123"
+        config:
+          base_url: "https://api.example.com"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: provider_create
+
+    - name: Assert provider was created
+      ansible.builtin.assert:
+        that:
+          - provider_create.changed
+          - provider_create.provider.name == "test-provider"
+          - provider_create.provider.type == "generic"
+
+    - name: "PROVIDER: Delete the test provider"
+      aknochow.openshell.provider:
+        gateway: "{{ gw.url }}"
+        name: "test-provider"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: provider_delete
+
+    - name: Assert provider was deleted
+      ansible.builtin.assert:
+        that: provider_delete.changed
+
+    - name: "PROVIDER: Delete non-existent provider (idempotent)"
+      aknochow.openshell.provider:
+        gateway: "{{ gw.url }}"
+        name: "test-provider"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: provider_delete2
+
+    - name: Assert idempotent delete
+      ansible.builtin.assert:
+        that: not provider_delete2.changed
+
+    # =========================================================================
+    # 2. SANDBOX CREATE WITH ENVIRONMENT VARS
+    # =========================================================================
+
+    - name: "CREATE: Sandbox with env vars at creation"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "test-env-sandbox"
+        image: "{{ sandbox_image }}"
+        environment:
+          GREETING: "hello-from-create"
+          APP_MODE: "testing"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: env_sandbox
+
+    - name: Assert sandbox created with env
+      ansible.builtin.assert:
+        that:
+          - env_sandbox.changed
+          - env_sandbox.sandbox.name == "test-env-sandbox"
+          - env_sandbox.sandbox.phase == "READY"
+
+    - name: "CREATE: Verify creation-time env vars are available"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["/bin/sh", "-c", "echo $GREETING $APP_MODE"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: env_check
+
+    - name: Assert creation-time env vars present
+      ansible.builtin.assert:
+        that:
+          - env_check.rc == 0
+          - "'hello-from-create' in env_check.stdout"
+          - "'testing' in env_check.stdout"
+
+    # =========================================================================
+    # 3. SANDBOX EXEC — STDIN SUPPORT
+    # =========================================================================
+
+    - name: "EXEC: Pipe stdin to cat"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["cat"]
+        stdin: "data piped via stdin"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: stdin_test
+
+    - name: Assert stdin was received
+      ansible.builtin.assert:
+        that:
+          - stdin_test.rc == 0
+          - "'data piped via stdin' in stdin_test.stdout"
+
+    # =========================================================================
+    # 4. SANDBOX EXEC — MULTIPLE SEQUENTIAL COMMANDS
+    # =========================================================================
+
+    - name: "EXEC: Write a file"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["/bin/sh", "-c", "echo 'persistent data' > /tmp/testfile.txt"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: write_file
+
+    - name: "EXEC: Read the file back"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["cat", "/tmp/testfile.txt"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: read_file
+
+    - name: Assert file persistence across exec calls
+      ansible.builtin.assert:
+        that:
+          - write_file.rc == 0
+          - read_file.rc == 0
+          - "'persistent data' in read_file.stdout"
+
+    # =========================================================================
+    # 5. SANDBOX EXEC — ENV VAR OVERRIDE AT EXEC TIME
+    # =========================================================================
+
+    - name: "EXEC: Override creation-time env var"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["/bin/sh", "-c", "echo $GREETING"]
+        environment:
+          GREETING: "overridden-at-exec"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: env_override
+
+    - name: Assert exec-time env override works
+      ansible.builtin.assert:
+        that:
+          - env_override.rc == 0
+          - "'overridden-at-exec' in env_override.stdout"
+
+    # =========================================================================
+    # 6. SANDBOX CREATE WITHOUT WAIT
+    # =========================================================================
+
+    - name: "NO-WAIT: Create sandbox without waiting"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "test-nowait"
+        image: "{{ sandbox_image }}"
+        wait: false
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: nowait_sandbox
+
+    - name: Assert no-wait create returns immediately
+      ansible.builtin.assert:
+        that:
+          - nowait_sandbox.changed
+          - nowait_sandbox.sandbox.id != ""
+
+    - name: "NO-WAIT: Wait and then check status via sandbox_info"
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ gw.url }}"
+        name: "test-nowait"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: nowait_info
+      retries: 10
+      delay: 3
+      until: nowait_info.sandboxes[0].phase == "READY"
+
+    - name: Assert no-wait sandbox eventually became ready
+      ansible.builtin.assert:
+        that: nowait_info.sandboxes[0].phase == "READY"
+
+    # =========================================================================
+    # 7. MULTI-SANDBOX MANAGEMENT
+    # =========================================================================
+
+    - name: "MULTI: List all sandboxes and count ours"
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ gw.url }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: all_sandboxes
+
+    - name: Show our test sandboxes
+      ansible.builtin.debug:
+        msg: "Test sandboxes: {{ all_sandboxes.sandboxes | selectattr('name', 'match', '^test-') | map(attribute='name') | list }}"
+
+    - name: Assert our test sandboxes are listed
+      ansible.builtin.assert:
+        that:
+          - all_sandboxes.sandboxes | selectattr('name', 'equalto', 'test-env-sandbox') | list | length == 1
+          - all_sandboxes.sandboxes | selectattr('name', 'equalto', 'test-nowait') | list | length == 1
+
+    # =========================================================================
+    # 8. EXEC BETWEEN DIFFERENT SANDBOXES
+    # =========================================================================
+
+    - name: "CROSS: Exec in env sandbox"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ env_sandbox.sandbox.id }}"
+        command: ["hostname"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: host1
+
+    - name: "CROSS: Exec in nowait sandbox"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ nowait_sandbox.sandbox.id }}"
+        command: ["hostname"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: host2
+
+    - name: Assert sandboxes are isolated (different hostnames)
+      ansible.builtin.assert:
+        that: host1.stdout != host2.stdout
+        fail_msg: "Sandboxes returned same hostname — isolation may be broken"
+
+    # =========================================================================
+    # 9. GATEWAY INFO — REPEATED CALLS (CONNECTION REUSE)
+    # =========================================================================
+
+    - name: "GATEWAY: Call health 3 times in sequence"
+      aknochow.openshell.gateway_info:
+        gateway: "{{ gw.url }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: health_check
+      loop: [1, 2, 3]
+
+    - name: Assert all 3 health checks succeeded
+      ansible.builtin.assert:
+        that:
+          - health_check.results | length == 3
+          - health_check.results | map(attribute='healthy') | select('equalto', true) | list | length == 3
+
+    # =========================================================================
+    # 10. ERROR PATHS — BAD GATEWAY URL
+    # =========================================================================
+
+    - name: "ERROR: Connect to non-existent gateway"
+      aknochow.openshell.gateway_info:
+        gateway: "https://127.0.0.1:59999"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        timeout: 3
+      register: bad_gw
+      ignore_errors: true
+
+    - name: Assert bad gateway fails with useful message
+      ansible.builtin.assert:
+        that:
+          - bad_gw.failed
+          - bad_gw.msg is defined
+
+    # =========================================================================
+    # 11. SANDBOX CREATE — MISSING IMAGE ERROR
+    # =========================================================================
+
+    - name: "ERROR: Create sandbox without image"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "should-fail"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: no_image
+      ignore_errors: true
+
+    - name: Assert missing image error
+      ansible.builtin.assert:
+        that:
+          - no_image.failed
+          - "'image' in no_image.msg"
+
+    # =========================================================================
+    # 12. SANDBOX DELETE — MISSING NAME ERROR
+    # =========================================================================
+
+    - name: "ERROR: Delete sandbox without name"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: no_name
+      ignore_errors: true
+
+    - name: Assert missing name error
+      ansible.builtin.assert:
+        that:
+          - no_name.failed
+          - "'name' in no_name.msg"
+
+    # =========================================================================
+    # CLEANUP
+    # =========================================================================
+
+    - name: "CLEANUP: Delete test-env-sandbox"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "test-env-sandbox"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+
+    - name: "CLEANUP: Delete test-nowait"
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "test-nowait"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+
+    - name: "SUMMARY"
+      ansible.builtin.debug:
+        msg: >-
+          Comprehensive test suite PASSED.
+          Provider CRUD, env vars (create + exec + override), stdin,
+          no-wait create, multi-sandbox isolation, sequential exec persistence,
+          repeated gateway health, and error paths all verified.
