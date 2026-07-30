@@ -37,6 +37,17 @@ GATEWAY_ARGSPEC = dict(
         default=30.0,
         fallback=(env_fallback, ["OPENSHELL_TIMEOUT"]),
     ),
+    # openshell>=0.0.88 scopes nearly every SandboxClient call to a
+    # workspace (required keyword-only arg on create/get/delete/list/
+    # wait_ready/wait_deleted/etc). Gateways that don't implement
+    # workspace support yet (WorkspaceClient RPCs return UNIMPLEMENTED)
+    # still accept and round-trip an empty string, so "" is a safe
+    # default rather than guessing a "default" sentinel.
+    workspace=dict(
+        type="str",
+        default="",
+        fallback=(env_fallback, ["OPENSHELL_WORKSPACE"]),
+    ),
 )
 
 

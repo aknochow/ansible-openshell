@@ -53,6 +53,9 @@ sandboxes:
     name:
       description: Sandbox name.
       type: str
+    workspace:
+      description: Workspace the sandbox belongs to.
+      type: str
     phase:
       description: Current sandbox phase.
       type: str
@@ -82,8 +85,9 @@ def sandbox_to_dict(ref):
     return dict(
         id=ref.id,
         name=ref.name,
-        phase=PHASE_NAMES.get(ref.phase, str(ref.phase)),
-        policy_version=ref.current_policy_version,
+        workspace=ref.workspace,
+        phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
+        policy_version=ref.status.current_policy_version,
     )
 
 
@@ -104,13 +108,14 @@ def main():
         from openshell import SandboxError
 
         name = module.params.get("name")
+        workspace = module.params.get("workspace") or ""
 
         try:
             if name:
-                ref = client.get(name)
+                ref = client.get(name, workspace=workspace)
                 module.exit_json(changed=False, sandboxes=[sandbox_to_dict(ref)])
             else:
-                refs = client.list()
+                refs = client.list(workspace=workspace)
                 module.exit_json(
                     changed=False,
                     sandboxes=[sandbox_to_dict(r) for r in refs],

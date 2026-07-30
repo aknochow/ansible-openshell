@@ -107,6 +107,11 @@ def main():
     parser.add_argument("--tls-ca", default=None)
     parser.add_argument("--bearer-token", default=None)
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
+    parser.add_argument(
+        "--workspace",
+        default="",
+        help="Workspace the sandbox belongs to (openshell>=0.0.88; empty string works against gateways without workspace support)",
+    )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 
@@ -114,7 +119,7 @@ def main():
 
     client = build_client(args)
     try:
-        sandbox = client.get(args.sandbox)
+        sandbox = client.get(args.sandbox, workspace=args.workspace)
         stub = openshell_pb2_grpc.OpenShellStub(client._channel)
 
         session = stub.CreateSshSession(

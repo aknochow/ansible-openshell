@@ -146,6 +146,10 @@ sandbox:
       description: Sandbox name.
       type: str
       returned: always
+    workspace:
+      description: Workspace the sandbox belongs to.
+      type: str
+      returned: always
     phase:
       description: Current sandbox phase (e.g., READY, PROVISIONING, ERROR).
       type: str
@@ -177,8 +181,9 @@ def sandbox_to_dict(ref):
     return dict(
         id=ref.id,
         name=ref.name,
-        phase=PHASE_NAMES.get(ref.phase, str(ref.phase)),
-        policy_version=ref.current_policy_version,
+        workspace=ref.workspace,
+        phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
+        policy_version=ref.status.current_policy_version,
     )
 
 
@@ -203,6 +208,7 @@ def create_sandbox(module, client):
     providers = module.params.get("providers") or []
     name = module.params.get("name")
     policy = module.params.get("policy") or {}
+    workspace = module.params.get("workspace") or ""
 
     template = openshell_pb2.SandboxTemplate(image=image)
     spec_kwargs = dict(
@@ -230,13 +236,13 @@ def create_sandbox(module, client):
     try:
         if name:
             try:
-                existing = client.get(name)
+                existing = client.get(name, workspace=workspace)
                 module.exit_json(changed=False, sandbox=sandbox_to_dict(existing))
                 return
             except (SandboxError, grpc.RpcError):
                 pass
 
-        request = openshell_pb2.CreateSandboxRequest(spec=spec)
+        request = openshell_pb2.CreateSandboxRequest(spec=spec, workspace=workspace)
         if name:
             request.name = name
 
@@ -248,6 +254,7 @@ def create_sandbox(module, client):
         ref = SandboxRef(
             id=ref_proto.metadata.id,
             name=ref_proto.metadata.name,
+            workspace=ref_proto.metadata.workspace,
             status=SandboxStatusRef(
                 phase=ref_proto.status.phase,
                 current_policy_version=ref_proto.status.current_policy_version,
@@ -256,7 +263,10 @@ def create_sandbox(module, client):
 
         if module.params.get("wait"):
             timeout = module.params.get("wait_timeout") or 300
-            ref = client.wait_ready(ref.name, timeout_seconds=float(timeout))
+            # Use the workspace the gateway actually recorded on the sandbox
+            # (ref.workspace), not the request's — the two should always
+            # agree, but the ref is the server's own source of truth.
+            ref = client.wait_ready(ref.name, workspace=ref.workspace, timeout_seconds=float(timeout))
 
         module.exit_json(changed=True, sandbox=sandbox_to_dict(ref))
     except (SandboxError, grpc.RpcError) as e:
@@ -274,18 +284,19 @@ def delete_sandbox(module, client):
     name = module.params.get("name")
     if not name:
         module.fail_json(msg="'name' is required when state=absent")
+    workspace = module.params.get("workspace") or ""
 
     try:
-        client.get(name)
+        client.get(name, workspace=workspace)
     except (SandboxError, grpc.RpcError):
         module.exit_json(changed=False)
         return
 
     try:
-        client.delete(name)
+        client.delete(name, workspace=workspace)
         if module.params.get("wait"):
             timeout = module.params.get("wait_timeout") or 60
-            client.wait_deleted(name, timeout_seconds=float(timeout))
+            client.wait_deleted(name, workspace=workspace, timeout_seconds=float(timeout))
         module.exit_json(changed=True)
     except (SandboxError, grpc.RpcError) as e:
         module.fail_json(msg=str(e))
