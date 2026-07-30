@@ -117,7 +117,8 @@ def main() -> None:
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
-    if not os.path.isabs(dest) or ".." in dest.split("/"):
+    dest = os.path.normpath(dest)
+    if not os.path.isabs(dest) or ".." in dest.split(os.sep):
         module.fail_json(msg="dest must be an absolute path without '..' components, got '%s'" % dest)
 
     client = get_client(module)
@@ -165,6 +166,8 @@ def main() -> None:
         # something else in the sandbox can predict/pre-create it.
         mktemp_result = run(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
         remote_tmp = mktemp_result.stdout.strip()
+        if "\n" in remote_tmp or not remote_tmp.startswith("/tmp/.ansible-openshell-upload-"):
+            module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
             run(["mkdir", "-p", dest])
