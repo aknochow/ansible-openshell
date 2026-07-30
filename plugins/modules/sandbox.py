@@ -164,27 +164,10 @@ from ansible.module_utils.basic import AnsibleModule
 
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
+    PHASE_NAMES,  # noqa: F401 — re-exported, sandbox_info.py and tests import it from here too
     get_client,
+    sandbox_to_dict,
 )
-
-PHASE_NAMES = {
-    0: "UNSPECIFIED",
-    1: "PROVISIONING",
-    2: "READY",
-    3: "ERROR",
-    4: "DELETING",
-    5: "UNKNOWN",
-}
-
-
-def sandbox_to_dict(ref):
-    return dict(
-        id=ref.id,
-        name=ref.name,
-        workspace=ref.workspace,
-        phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
-        policy_version=ref.status.current_policy_version,
-    )
 
 
 def create_sandbox(module, client):
@@ -254,7 +237,9 @@ def create_sandbox(module, client):
         ref = SandboxRef(
             id=ref_proto.metadata.id,
             name=ref_proto.metadata.name,
-            workspace=ref_proto.metadata.workspace,
+            # getattr with a default: older gateways may not populate
+            # metadata.workspace on the response at all.
+            workspace=getattr(ref_proto.metadata, "workspace", ""),
             status=SandboxStatusRef(
                 phase=ref_proto.status.phase,
                 current_policy_version=ref_proto.status.current_policy_version,

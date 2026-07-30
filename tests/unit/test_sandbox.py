@@ -52,12 +52,14 @@ class TestSandboxModule:
         ref = MagicMock()
         ref.id = "sandbox-123"
         ref.name = "test-sandbox"
-        ref.phase = 2
-        ref.current_policy_version = 1
+        ref.workspace = "test-workspace"
+        ref.status.phase = 2
+        ref.status.current_policy_version = 1
 
         result = sandbox_to_dict(ref)
         assert result["id"] == "sandbox-123"
         assert result["name"] == "test-sandbox"
+        assert result["workspace"] == "test-workspace"
         assert result["phase"] == "READY"
         assert result["policy_version"] == 1
 
@@ -67,7 +69,14 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"image": None, "name": None, "environment": {}, "wait": True, "wait_timeout": 300}
+        module.params = {
+            "image": None,
+            "name": None,
+            "environment": {},
+            "wait": True,
+            "wait_timeout": 300,
+            "workspace": "",
+        }
         client = MagicMock()
 
         create_sandbox(module, client)
@@ -80,7 +89,7 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"name": None, "wait": True, "wait_timeout": 60}
+        module.params = {"name": None, "wait": True, "wait_timeout": 60, "workspace": ""}
         client = MagicMock()
 
         delete_sandbox(module, client)
@@ -93,12 +102,13 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"name": "missing-sandbox", "wait": True, "wait_timeout": 60}
+        module.params = {"name": "missing-sandbox", "wait": True, "wait_timeout": 60, "workspace": "my-workspace"}
         client = MagicMock()
         client.get.side_effect = mock_openshell.SandboxError("not found")
 
         delete_sandbox(module, client)
         module.exit_json.assert_called_once_with(changed=False)
+        client.get.assert_called_once_with("missing-sandbox", workspace="my-workspace")
 
 
 class TestSandboxExecModule:

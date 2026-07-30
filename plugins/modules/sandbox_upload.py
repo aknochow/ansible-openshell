@@ -64,7 +64,9 @@ bytes_transferred:
 
 import io
 import os
+import shlex
 import tarfile
+from typing import Any
 
 from ansible.module_utils.basic import AnsibleModule
 
@@ -83,7 +85,7 @@ from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_clien
 CHUNK_SIZE = 800_000
 
 
-def main():
+def main() -> None:
     argument_spec = dict(
         name=dict(type="str", required=True),
         src=dict(type="path", required=True),
@@ -96,12 +98,17 @@ def main():
         supports_check_mode=False,
     )
 
-    from openshell import SandboxError
+    try:
+        from openshell import SandboxError
+    except ImportError:
+        module.fail_json(msg="The openshell Python SDK is required. Install it with: pip install 'openshell>=0.0.70'")
+        return
 
     try:
         import grpc
     except ImportError:
         module.fail_json(msg="grpcio is required")
+        return
 
     name = module.params["name"]
     src = module.params["src"]
@@ -110,6 +117,8 @@ def main():
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
+    if not os.path.isabs(dest) or ".." in dest.split("/"):
+        module.fail_json(msg="dest must be an absolute path without '..' components, got '%s'" % dest)
 
     client = get_client(module)
     try:
@@ -124,9 +133,7 @@ def main():
             tf.add(src, arcname=".")
         tar_bytes = buf.getvalue()
 
-        remote_tmp = "/tmp/.ansible-openshell-upload-%s.tar.gz" % os.urandom(8).hex()
-
-        def run(argv, stdin=None):
+        def run(argv: list[str], stdin: bytes | None = None) -> Any:
             result = client.exec(sandbox.id, argv, stdin=stdin)
             if result.exit_code != 0:
                 module.fail_json(
@@ -135,9 +142,19 @@ def main():
                 )
             return result
 
+        # mktemp (not a locally-constructed random name) so the remote
+        # path is created atomically — a predictable name written via a
+        # plain `cat >>` redirect is vulnerable to a symlink race if
+        # something else in the sandbox can predict/pre-create it.
+        mktemp_result = run(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
+        remote_tmp = mktemp_result.stdout.strip()
+
         run(["mkdir", "-p", dest])
         for offset in range(0, len(tar_bytes), CHUNK_SIZE):
-            run(["sh", "-c", "cat >> " + remote_tmp], stdin=tar_bytes[offset : offset + CHUNK_SIZE])
+            run(
+                ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
+                stdin=tar_bytes[offset : offset + CHUNK_SIZE],
+            )
         run(["tar", "xzf", remote_tmp, "-C", dest])
         run(["rm", "-f", remote_tmp])
 

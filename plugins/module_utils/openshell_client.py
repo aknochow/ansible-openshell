@@ -51,6 +51,27 @@ GATEWAY_ARGSPEC = dict(
 )
 
 
+PHASE_NAMES = {
+    0: "UNSPECIFIED",
+    1: "PROVISIONING",
+    2: "READY",
+    3: "ERROR",
+    4: "DELETING",
+    5: "UNKNOWN",
+}
+
+
+def sandbox_to_dict(ref) -> dict:
+    """Shared by sandbox.py and sandbox_info.py — same SandboxRef shape."""
+    return dict(
+        id=ref.id,
+        name=ref.name,
+        workspace=ref.workspace,
+        phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
+        policy_version=ref.status.current_policy_version,
+    )
+
+
 def get_client(module: AnsibleModule):
     """Create a SandboxClient from module params."""
     try:
