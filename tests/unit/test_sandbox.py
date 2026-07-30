@@ -36,7 +36,7 @@ def mock_openshell():
 
 class TestSandboxModule:
     def test_phase_names_mapping(self, mock_openshell):
-        from ansible_collections.aknochow.openshell.plugins.modules.sandbox import (
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             PHASE_NAMES,
         )
 

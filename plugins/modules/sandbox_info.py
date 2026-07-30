@@ -68,7 +68,6 @@ from ansible.module_utils.basic import AnsibleModule
 
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
-    PHASE_NAMES,  # noqa: F401 — re-exported for anything importing it from here
     get_client,
     sandbox_to_dict,
 )

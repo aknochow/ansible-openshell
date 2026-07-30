@@ -128,9 +128,26 @@ def main() -> None:
             module.fail_json(msg="sandbox '%s' not found: %s" % (name, e))
             return
 
+        real_src = os.path.realpath(src)
+
+        def reject_escaping_members(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
+            """TarFile.add()'s own filter hook — takes a single TarInfo,
+            returns it unchanged or None to exclude (NOT the 2-arg
+            (member, path) signature that's specific to extraction
+            filters like tarfile.data_filter — a different hook for a
+            different operation, not composable here). Drops members
+            whose resolved target escapes src, e.g. a symlink planted
+            inside a malicious checkout pointing at a file outside it —
+            tarfile.add() follows symlinks by default and would
+            otherwise silently embed whatever they point at."""
+            full = os.path.realpath(os.path.join(src, tarinfo.name))
+            if full != real_src and not full.startswith(real_src + os.sep):
+                return None
+            return tarinfo
+
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            tf.add(src, arcname=".")
+            tf.add(src, arcname=".", filter=reject_escaping_members)
         tar_bytes = buf.getvalue()
 
         def run(argv: list[str], stdin: bytes | None = None) -> Any:
@@ -149,14 +166,22 @@ def main() -> None:
         mktemp_result = run(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
         remote_tmp = mktemp_result.stdout.strip()
 
-        run(["mkdir", "-p", dest])
-        for offset in range(0, len(tar_bytes), CHUNK_SIZE):
-            run(
-                ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
-                stdin=tar_bytes[offset : offset + CHUNK_SIZE],
-            )
-        run(["tar", "xzf", remote_tmp, "-C", dest])
-        run(["rm", "-f", remote_tmp])
+        try:
+            run(["mkdir", "-p", dest])
+            for offset in range(0, len(tar_bytes), CHUNK_SIZE):
+                run(
+                    ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
+                    stdin=tar_bytes[offset : offset + CHUNK_SIZE],
+                )
+            run(["tar", "xzf", remote_tmp, "-C", dest])
+        finally:
+            # Best-effort — if this fails too, the original error (if
+            # any) from the block above is what module.fail_json already
+            # raised; don't let a cleanup failure mask it.
+            try:
+                client.exec(sandbox.id, ["rm", "-f", remote_tmp])
+            except (SandboxError, grpc.RpcError):
+                pass
 
         module.exit_json(changed=True, bytes_transferred=len(tar_bytes))
     except (SandboxError, grpc.RpcError) as e:
