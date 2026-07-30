@@ -64,6 +64,7 @@ bytes_transferred:
 
 import io
 import os
+import posixpath
 import shlex
 import tarfile
 from typing import Any
@@ -113,12 +114,17 @@ def main() -> None:
     name = module.params["name"]
     src = module.params["src"]
     dest = module.params["dest"]
-    workspace = module.params.get("workspace") or ""
+    # GATEWAY_ARGSPEC already defaults workspace to "", so module.params
+    # always has a string here — no need for an `or ""` fallback.
+    workspace = module.params["workspace"]
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
-    dest = os.path.normpath(dest)
-    if not os.path.isabs(dest) or ".." in dest.split(os.sep):
+    # dest is always a remote POSIX (Linux sandbox) path regardless of
+    # what OS the controller runs on — os.path/os.sep would use '\' on a
+    # Windows controller and silently fail to split on '/' at all.
+    dest = posixpath.normpath(dest)
+    if not dest.startswith("/") or ".." in dest.split("/"):
         module.fail_json(msg="dest must be an absolute path without '..' components, got '%s'" % dest)
 
     client = get_client(module)
@@ -166,7 +172,13 @@ def main() -> None:
         # something else in the sandbox can predict/pre-create it.
         mktemp_result = run(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
         remote_tmp = mktemp_result.stdout.strip()
-        if "\n" in remote_tmp or not remote_tmp.startswith("/tmp/.ansible-openshell-upload-"):
+        _tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
+        if (
+            not remote_tmp.startswith("/tmp/.ansible-openshell-upload-")
+            or "\n" in remote_tmp
+            or "/" in _tmp_suffix
+            or ".." in _tmp_suffix
+        ):
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
