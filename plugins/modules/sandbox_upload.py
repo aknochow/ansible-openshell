@@ -87,6 +87,53 @@ from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_clien
 CHUNK_SIZE = 800_000
 
 
+def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.TarInfo | None:
+    """Drop tar members whose resolved path escapes the source directory.
+
+    This is a TarFile.add() filter hook (single TarInfo arg, returns
+    TarInfo or None — NOT the 2-arg (member, path) signature specific
+    to extraction filters like tarfile.data_filter, a different hook
+    for a different operation). Guards against a symlink planted
+    inside a malicious checkout pointing outside it — tarfile.add()
+    does NOT dereference symlinks by default (confirmed: it archives
+    the link itself, not the target's content), so the real risk
+    isn't embedded content but the archived symlink being recreated
+    verbatim by `tar xzf` on the sandbox side, landing an
+    attacker-chosen absolute path inside the sandbox filesystem.
+    """
+    # tarinfo.name is always relative here (tarfile.add() derives it
+    # from arcname during its own directory walk), but reject an
+    # absolute name outright rather than let os.path.join silently
+    # discard `real_src` and resolve outside it.
+    if os.path.isabs(tarinfo.name):
+        return None
+    # An absolute symlink target can resolve inside `real_src` on the
+    # controller (passing the realpath check below) yet still be
+    # archived with that literal absolute linkname — confirmed
+    # live: `tar xzf` recreates it verbatim on the sandbox side,
+    # where the same absolute path means something else entirely
+    # (or nothing at all). Relative targets are already covered by
+    # the realpath check, since it resolves the member's own
+    # location (following its symlink chain) against `real_src`.
+    if tarinfo.issym() and os.path.isabs(tarinfo.linkname):
+        return None
+    full = os.path.realpath(os.path.join(real_src, tarinfo.name))
+    if full != real_src and not full.startswith(real_src + os.sep):
+        return None
+    return tarinfo
+
+
+def exec_or_fail(
+    client, sandbox_id: str, module: AnsibleModule, argv: list[str], stdin: bytes | None = None
+) -> Any:
+    result = client.exec(sandbox_id, argv, stdin=stdin)
+    if result.exit_code != 0:
+        module.fail_json(
+            msg="command %s failed (rc=%d): %s" % (argv, result.exit_code, result.stderr)
+        )
+    return result
+
+
 def main() -> None:
     argument_spec = dict(
         name=dict(type="str", required=True),
@@ -147,60 +194,22 @@ def main() -> None:
 
         real_src = os.path.realpath(src)
 
-        def reject_escaping_members(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
-            """Drop tar members whose resolved path escapes the source directory.
-
-            This is a TarFile.add() filter hook (single TarInfo arg, returns
-            TarInfo or None — NOT the 2-arg (member, path) signature specific
-            to extraction filters like tarfile.data_filter, a different hook
-            for a different operation). Guards against a symlink planted
-            inside a malicious checkout pointing outside it — tarfile.add()
-            does NOT dereference symlinks by default (confirmed: it archives
-            the link itself, not the target's content), so the real risk
-            isn't embedded content but the archived symlink being recreated
-            verbatim by `tar xzf` on the sandbox side, landing an
-            attacker-chosen absolute path inside the sandbox filesystem.
-            """
-            # tarinfo.name is always relative here (tarfile.add() derives it
-            # from arcname during its own directory walk), but reject an
-            # absolute name outright rather than let os.path.join silently
-            # discard `src` and resolve outside it.
-            if os.path.isabs(tarinfo.name):
-                return None
-            # An absolute symlink target can resolve inside `src` on the
-            # controller (passing the realpath check below) yet still be
-            # archived with that literal absolute linkname — confirmed
-            # live: `tar xzf` recreates it verbatim on the sandbox side,
-            # where the same absolute path means something else entirely
-            # (or nothing at all). Relative targets are already covered by
-            # the realpath check, since it resolves the member's own
-            # location (following its symlink chain) against `real_src`.
-            if tarinfo.issym() and os.path.isabs(tarinfo.linkname):
-                return None
-            full = os.path.realpath(os.path.join(real_src, tarinfo.name))
-            if full != real_src and not full.startswith(real_src + os.sep):
-                return None
-            return tarinfo
-
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            tf.add(src, arcname=".", filter=reject_escaping_members)
+            tf.add(
+                src,
+                arcname=".",
+                filter=lambda tarinfo: reject_escaping_members(tarinfo, real_src),
+            )
         tar_bytes = buf.getvalue()
-
-        def exec_or_fail(argv: list[str], stdin: bytes | None = None) -> Any:
-            result = client.exec(sandbox.id, argv, stdin=stdin)
-            if result.exit_code != 0:
-                module.fail_json(
-                    msg="command %s failed (rc=%d): %s"
-                    % (argv, result.exit_code, result.stderr)
-                )
-            return result
 
         # mktemp (not a locally-constructed random name) so the remote
         # path is created atomically — a predictable name written via a
         # plain `cat >>` redirect is vulnerable to a symlink race if
         # something else in the sandbox can predict/pre-create it.
-        mktemp_result = exec_or_fail(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
+        mktemp_result = exec_or_fail(
+            client, sandbox.id, module, ["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"]
+        )
         remote_tmp = mktemp_result.stdout.strip()
         _tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
         # Full character-class + suffix match rather than just excluding
@@ -213,13 +222,16 @@ def main() -> None:
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
-            exec_or_fail(["mkdir", "-p", dest])
+            exec_or_fail(client, sandbox.id, module, ["mkdir", "-p", dest])
             for offset in range(0, len(tar_bytes), CHUNK_SIZE):
                 exec_or_fail(
+                    client,
+                    sandbox.id,
+                    module,
                     ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
                     stdin=tar_bytes[offset : offset + CHUNK_SIZE],
                 )
-            exec_or_fail(["tar", "xzf", remote_tmp, "-C", dest])
+            exec_or_fail(client, sandbox.id, module, ["tar", "xzf", remote_tmp, "-C", dest])
         finally:
             # Best-effort — if this fails too, the original error (if
             # any) from the block above is what module.fail_json already

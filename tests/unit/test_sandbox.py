@@ -123,7 +123,11 @@ class TestSandboxExecModule:
         mock_result.stdout = "hello"
         mock_result.stderr = ""
 
+        mock_sandbox_ref = MagicMock()
+        mock_sandbox_ref.id = "sandbox-123"
+
         mock_client = MagicMock()
+        mock_client.get.return_value = mock_sandbox_ref
         mock_client.exec.return_value = mock_result
         mock_openshell.SandboxClient.return_value = mock_client
 
@@ -140,6 +144,7 @@ class TestSandboxExecModule:
                 "tls_ca": None,
                 "bearer_token": None,
                 "timeout": 30.0,
+                "workspace": "",
                 "sandbox": "test-sandbox",
                 "command": ["echo", "hello"],
                 "workdir": None,
@@ -151,6 +156,20 @@ class TestSandboxExecModule:
             mock_get_client.return_value = mock_client
 
             main()
+            # Verifies the name-to-ID resolution added when workspace scoping
+            # landed: exec() must receive the ID that get() resolved to
+            # (sandbox-123), not the raw "test-sandbox" param — a bare
+            # unconfigured mock_client.get() would let a MagicMock leak
+            # through here instead, without failing the assertion below.
+            mock_client.get.assert_called_once_with("test-sandbox", workspace="")
+            mock_client.exec.assert_called_once_with(
+                "sandbox-123",
+                ["echo", "hello"],
+                workdir=None,
+                env={},
+                stdin=None,
+                timeout_seconds=None,
+            )
             mock_module.exit_json.assert_called_once_with(
                 changed=True, rc=0, stdout="hello", stderr=""
             )
