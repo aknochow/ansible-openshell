@@ -114,9 +114,10 @@ def main() -> None:
     name = module.params["name"]
     src = module.params["src"]
     dest = module.params["dest"]
-    # GATEWAY_ARGSPEC already defaults workspace to "", so module.params
-    # always has a string here — no need for an `or ""` fallback.
-    workspace = module.params["workspace"]
+    # Matches sandbox.py/sandbox_info.py's defensive fallback — GATEWAY_ARGSPEC
+    # already defaults workspace to "", but an explicit workspace=None from
+    # Ansible variable resolution would otherwise reach the SDK as None.
+    workspace = module.params.get("workspace") or ""
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
@@ -138,15 +139,22 @@ def main() -> None:
         real_src = os.path.realpath(src)
 
         def reject_escaping_members(tarinfo: tarfile.TarInfo) -> tarfile.TarInfo | None:
-            """TarFile.add()'s own filter hook — takes a single TarInfo,
-            returns it unchanged or None to exclude (NOT the 2-arg
-            (member, path) signature that's specific to extraction
-            filters like tarfile.data_filter — a different hook for a
-            different operation, not composable here). Drops members
-            whose resolved target escapes src, e.g. a symlink planted
+            """Drop tar members whose resolved path escapes the source directory.
+
+            This is a TarFile.add() filter hook (single TarInfo arg, returns
+            TarInfo or None — NOT the 2-arg (member, path) signature specific
+            to extraction filters like tarfile.data_filter, a different hook
+            for a different operation). Guards against a symlink planted
             inside a malicious checkout pointing at a file outside it —
-            tarfile.add() follows symlinks by default and would
-            otherwise silently embed whatever they point at."""
+            tarfile.add() follows symlinks by default and would otherwise
+            silently embed whatever they point at.
+            """
+            # tarinfo.name is always relative here (tarfile.add() derives it
+            # from arcname during its own directory walk), but reject an
+            # absolute name outright rather than let os.path.join silently
+            # discard `src` and resolve outside it.
+            if os.path.isabs(tarinfo.name):
+                return None
             full = os.path.realpath(os.path.join(src, tarinfo.name))
             if full != real_src and not full.startswith(real_src + os.sep):
                 return None
@@ -157,7 +165,7 @@ def main() -> None:
             tf.add(src, arcname=".", filter=reject_escaping_members)
         tar_bytes = buf.getvalue()
 
-        def run(argv: list[str], stdin: bytes | None = None) -> Any:
+        def exec_or_fail(argv: list[str], stdin: bytes | None = None) -> Any:
             result = client.exec(sandbox.id, argv, stdin=stdin)
             if result.exit_code != 0:
                 module.fail_json(
@@ -170,7 +178,7 @@ def main() -> None:
         # path is created atomically — a predictable name written via a
         # plain `cat >>` redirect is vulnerable to a symlink race if
         # something else in the sandbox can predict/pre-create it.
-        mktemp_result = run(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
+        mktemp_result = exec_or_fail(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
         remote_tmp = mktemp_result.stdout.strip()
         _tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
         if (
@@ -182,13 +190,13 @@ def main() -> None:
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
-            run(["mkdir", "-p", dest])
+            exec_or_fail(["mkdir", "-p", dest])
             for offset in range(0, len(tar_bytes), CHUNK_SIZE):
-                run(
+                exec_or_fail(
                     ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
                     stdin=tar_bytes[offset : offset + CHUNK_SIZE],
                 )
-            run(["tar", "xzf", remote_tmp, "-C", dest])
+            exec_or_fail(["tar", "xzf", remote_tmp, "-C", dest])
         finally:
             # Best-effort — if this fails too, the original error (if
             # any) from the block above is what module.fail_json already
