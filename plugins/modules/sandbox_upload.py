@@ -65,6 +65,7 @@ bytes_transferred:
 import io
 import os
 import posixpath
+import re
 import shlex
 import tarfile
 from typing import Any
@@ -166,7 +167,17 @@ def main() -> None:
             # discard `src` and resolve outside it.
             if os.path.isabs(tarinfo.name):
                 return None
-            full = os.path.realpath(os.path.join(src, tarinfo.name))
+            # An absolute symlink target can resolve inside `src` on the
+            # controller (passing the realpath check below) yet still be
+            # archived with that literal absolute linkname — confirmed
+            # live: `tar xzf` recreates it verbatim on the sandbox side,
+            # where the same absolute path means something else entirely
+            # (or nothing at all). Relative targets are already covered by
+            # the realpath check, since it resolves the member's own
+            # location (following its symlink chain) against `real_src`.
+            if tarinfo.issym() and os.path.isabs(tarinfo.linkname):
+                return None
+            full = os.path.realpath(os.path.join(real_src, tarinfo.name))
             if full != real_src and not full.startswith(real_src + os.sep):
                 return None
             return tarinfo
@@ -192,11 +203,12 @@ def main() -> None:
         mktemp_result = exec_or_fail(["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"])
         remote_tmp = mktemp_result.stdout.strip()
         _tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
-        if (
-            not remote_tmp.startswith("/tmp/.ansible-openshell-upload-")
-            or "\n" in remote_tmp
-            or "/" in _tmp_suffix
-            or ".." in _tmp_suffix
+        # Full character-class + suffix match rather than just excluding
+        # '/' and '..' — a compromised mktemp could otherwise still return
+        # something with shell metacharacters or missing the .tar.gz
+        # extension that later steps assume.
+        if not remote_tmp.startswith("/tmp/.ansible-openshell-upload-") or not re.fullmatch(
+            r"[A-Za-z0-9._-]+\.tar\.gz", _tmp_suffix
         ):
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
@@ -214,7 +226,7 @@ def main() -> None:
             # raised; don't let a cleanup failure mask it.
             try:
                 client.exec(sandbox.id, ["rm", "-f", remote_tmp])
-            except (SandboxError, grpc.RpcError):
+            except Exception:
                 pass
 
         module.exit_json(changed=True, bytes_transferred=len(tar_bytes))

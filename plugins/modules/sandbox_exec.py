@@ -138,13 +138,19 @@ def main():
             # no workspace kwarg — only client.get() is workspace-scoped
             # (sandbox names are only unique within a workspace, not
             # globally). Resolve `sandbox` (name or ID, per this module's
-            # own docs/examples) through get() first so exec() always
-            # targets the sandbox in the caller's requested workspace,
-            # rather than passing a possibly-ambiguous bare name straight
-            # to exec() and silently hitting a same-named sandbox elsewhere.
-            sandbox_ref = client.get(sandbox_name, workspace=workspace)
+            # own docs/examples) through get() first so a bare name is
+            # disambiguated within the caller's requested workspace rather
+            # than passed straight to exec() and silently hitting a
+            # same-named sandbox elsewhere. get() only resolves names
+            # though (confirmed live: passing an ID raises NOT_FOUND), so
+            # fall back to treating `sandbox` as an already-resolved ID —
+            # exec() itself will raise loudly if it's neither.
+            try:
+                sandbox_id = client.get(sandbox_name, workspace=workspace).id
+            except (SandboxError, grpc.RpcError):
+                sandbox_id = sandbox_name
             result = client.exec(
-                sandbox_ref.id,
+                sandbox_id,
                 command,
                 workdir=workdir,
                 env=env,
