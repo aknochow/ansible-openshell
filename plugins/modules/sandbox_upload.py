@@ -121,12 +121,20 @@ def main() -> None:
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
+    # Reject '..' in the raw input before normalizing — dest isn't confined
+    # to any particular base directory (the operator picks the destination
+    # deliberately, same trust model as ansible.builtin.copy's dest), so
+    # this isn't a traversal boundary; it's a well-formedness check, and
+    # checking post-normpath would be checking for something normpath
+    # already resolved away.
+    if ".." in dest.split("/"):
+        module.fail_json(msg="dest must not contain '..' components, got '%s'" % dest)
     # dest is always a remote POSIX (Linux sandbox) path regardless of
     # what OS the controller runs on — os.path/os.sep would use '\' on a
     # Windows controller and silently fail to split on '/' at all.
     dest = posixpath.normpath(dest)
-    if not dest.startswith("/") or ".." in dest.split("/"):
-        module.fail_json(msg="dest must be an absolute path without '..' components, got '%s'" % dest)
+    if not dest.startswith("/"):
+        module.fail_json(msg="dest must be an absolute path, got '%s'" % dest)
 
     client = get_client(module)
     try:
@@ -145,9 +153,12 @@ def main() -> None:
             TarInfo or None — NOT the 2-arg (member, path) signature specific
             to extraction filters like tarfile.data_filter, a different hook
             for a different operation). Guards against a symlink planted
-            inside a malicious checkout pointing at a file outside it —
-            tarfile.add() follows symlinks by default and would otherwise
-            silently embed whatever they point at.
+            inside a malicious checkout pointing outside it — tarfile.add()
+            does NOT dereference symlinks by default (confirmed: it archives
+            the link itself, not the target's content), so the real risk
+            isn't embedded content but the archived symlink being recreated
+            verbatim by `tar xzf` on the sandbox side, landing an
+            attacker-chosen absolute path inside the sandbox filesystem.
             """
             # tarinfo.name is always relative here (tarfile.add() derives it
             # from arcname during its own directory walk), but reject an

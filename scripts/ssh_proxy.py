@@ -120,6 +120,12 @@ def main():
     client = build_client(args)
     try:
         sandbox = client.get(args.sandbox, workspace=args.workspace)
+        # SandboxClient has no public wrapper for CreateSshSession/ForwardTcp
+        # (unlike CreateSandbox, which client.create() covers) — reaching
+        # into client._channel is the only way to reach these RPCs today.
+        # Known limitation, not fixable without an SDK change; pin the
+        # openshell version constraint in setup.py/galaxy.yml if this ever
+        # needs to track a channel-shape change upstream.
         stub = openshell_pb2_grpc.OpenShellStub(client._channel)
 
         session = stub.CreateSshSession(

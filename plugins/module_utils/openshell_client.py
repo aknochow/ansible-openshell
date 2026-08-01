@@ -66,9 +66,7 @@ def sandbox_to_dict(ref) -> dict:
     return dict(
         id=ref.id,
         name=ref.name,
-        # getattr with a default: older gateways may not populate
-        # workspace on the ref at all.
-        workspace=getattr(ref, "workspace", ""),
+        workspace=ref.workspace,
         phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
         policy_version=ref.status.current_policy_version,
     )

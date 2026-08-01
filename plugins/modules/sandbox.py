@@ -178,7 +178,7 @@ def create_sandbox(module, client):
         module.fail_json(msg="grpcio is required")
 
     try:
-        from openshell._proto import openshell_pb2, openshell_pb2_grpc, sandbox_pb2
+        from openshell._proto import openshell_pb2, sandbox_pb2
     except ImportError:
         module.fail_json(msg="openshell proto bindings not found")
 
@@ -224,26 +224,12 @@ def create_sandbox(module, client):
             except (SandboxError, grpc.RpcError):
                 pass
 
-        request = openshell_pb2.CreateSandboxRequest(spec=spec, workspace=workspace)
-        if name:
-            request.name = name
-
-        stub = openshell_pb2_grpc.OpenShellStub(client._channel)
-        response = stub.CreateSandbox(request, timeout=client._timeout)
-        ref_proto = response.sandbox
-        from openshell import SandboxRef, SandboxStatusRef
-
-        ref = SandboxRef(
-            id=ref_proto.metadata.id,
-            name=ref_proto.metadata.name,
-            # getattr with a default: older gateways may not populate
-            # metadata.workspace on the response at all.
-            workspace=getattr(ref_proto.metadata, "workspace", ""),
-            status=SandboxStatusRef(
-                phase=ref_proto.status.phase,
-                current_policy_version=ref_proto.status.current_policy_version,
-            ),
-        )
+        # client.create() is the SDK's own public wrapper for CreateSandbox —
+        # it builds the SandboxRef (workspace included) from the response and
+        # raises SandboxError if the gateway returns an empty id, so there's
+        # no need to reach into client._channel/_timeout and reimplement the
+        # RPC call by hand.
+        ref = client.create(workspace=workspace, spec=spec, name=name)
 
         if module.params.get("wait"):
             timeout = module.params.get("wait_timeout") or 300

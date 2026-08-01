@@ -131,10 +131,20 @@ def main():
         env = module.params.get("environment") or {}
         stdin_data = module.params.get("stdin")
         cmd_timeout = module.params.get("command_timeout")
+        workspace = module.params.get("workspace") or ""
 
         try:
+            # SandboxClient.exec() takes a globally-unique sandbox_id and has
+            # no workspace kwarg — only client.get() is workspace-scoped
+            # (sandbox names are only unique within a workspace, not
+            # globally). Resolve `sandbox` (name or ID, per this module's
+            # own docs/examples) through get() first so exec() always
+            # targets the sandbox in the caller's requested workspace,
+            # rather than passing a possibly-ambiguous bare name straight
+            # to exec() and silently hitting a same-named sandbox elsewhere.
+            sandbox_ref = client.get(sandbox_name, workspace=workspace)
             result = client.exec(
-                sandbox_name,
+                sandbox_ref.id,
                 command,
                 workdir=workdir,
                 env=env,
