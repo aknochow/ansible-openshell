@@ -160,17 +160,20 @@ sandbox:
       returned: always
 """
 
+from typing import Any
+
 from ansible.module_utils.basic import AnsibleModule
 
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_or_none,
     get_workspace,
     sandbox_to_dict,
 )
 
 
-def create_sandbox(module, client):
+def create_sandbox(module: AnsibleModule, client: Any) -> None:
     from openshell import SandboxError
 
     try:
@@ -218,12 +221,10 @@ def create_sandbox(module, client):
 
     try:
         if name:
-            try:
-                existing = client.get(name, workspace=workspace)
+            existing = get_or_none(client, name, workspace, module)
+            if existing is not None:
                 module.exit_json(changed=False, sandbox=sandbox_to_dict(existing))
                 return
-            except (SandboxError, grpc.RpcError):
-                pass
 
         # client.create() is the SDK's own public wrapper for CreateSandbox —
         # it builds the SandboxRef (workspace included) from the response and
@@ -244,7 +245,7 @@ def create_sandbox(module, client):
         module.fail_json(msg=str(e))
 
 
-def delete_sandbox(module, client):
+def delete_sandbox(module: AnsibleModule, client: Any) -> None:
     from openshell import SandboxError
 
     try:
@@ -257,9 +258,7 @@ def delete_sandbox(module, client):
         module.fail_json(msg="'name' is required when state=absent")
     workspace = get_workspace(module)
 
-    try:
-        client.get(name, workspace=workspace)
-    except (SandboxError, grpc.RpcError):
+    if get_or_none(client, name, workspace, module) is None:
         module.exit_json(changed=False)
         return
 

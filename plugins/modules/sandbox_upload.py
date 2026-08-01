@@ -96,19 +96,7 @@ MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 
 
 def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.TarInfo | None:
-    """Drop tar members whose resolved path escapes the source directory.
-
-    This is a TarFile.add() filter hook (single TarInfo arg, returns
-    TarInfo or None — NOT the 2-arg (member, path) signature specific
-    to extraction filters like tarfile.data_filter, a different hook
-    for a different operation). Guards against a symlink planted
-    inside a malicious checkout pointing outside it — tarfile.add()
-    does NOT dereference symlinks by default (confirmed: it archives
-    the link itself, not the target's content), so the real risk
-    isn't embedded content but the archived symlink being recreated
-    verbatim by `tar xzf` on the sandbox side, landing an
-    attacker-chosen absolute path inside the sandbox filesystem.
-    """
+    """Drop tar members whose resolved path escapes the source directory."""
     # tarinfo.name is always relative here (tarfile.add() derives it
     # from arcname during its own directory walk), but reject an
     # absolute name outright rather than let os.path.join silently
@@ -201,6 +189,12 @@ def main() -> None:
 
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
+            # filter is TarFile.add()'s own hook (single TarInfo arg, returns
+            # TarInfo or None) — not the 2-arg extraction-filter signature
+            # (tarfile.data_filter). tarfile.add() does NOT dereference
+            # symlinks by default (confirmed empirically: it archives the
+            # link itself, not the target's content) — see
+            # reject_escaping_members for why that still needs guarding.
             tf.add(
                 src,
                 arcname=".",

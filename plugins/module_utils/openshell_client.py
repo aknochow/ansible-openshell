@@ -83,6 +83,38 @@ def get_workspace(module: AnsibleModule) -> str:
     return module.params.get("workspace") or ""
 
 
+def get_or_none(client: Any, name: str, workspace: str, module: AnsibleModule) -> Any:
+    """Look up a sandbox by name/ID; return None on a confirmed NOT_FOUND,
+    fail_json on any other error.
+
+    Three call sites (sandbox.py's create/delete, sandbox_exec.py's name-
+    to-ID resolution) each need "does this exist" semantics without
+    conflating a real problem (gateway unreachable, bad credentials) with
+    "confirmed absent" — treating every error as absence risks silently
+    creating a duplicate sandbox, reporting a delete as already-done when
+    it isn't, or masking a connectivity failure behind a confusing
+    downstream error (live-verified: an unreachable gateway raising
+    UNAVAILABLE must not be treated the same as NOT_FOUND). SandboxError
+    itself is a bare RuntimeError with no status info, and this SDK
+    version's get() doesn't actually raise it — grpc.RpcError propagates
+    unwrapped — so it's treated as NOT_FOUND for lack of a finer signal,
+    matching pre-existing behavior for that branch.
+    """
+    from openshell import SandboxError
+
+    import grpc
+
+    try:
+        return client.get(name, workspace=workspace)
+    except grpc.RpcError as e:
+        if hasattr(e, "code") and e.code() == grpc.StatusCode.NOT_FOUND:
+            return None
+        module.fail_json(msg="failed to look up sandbox '%s': %s" % (name, e))
+        return None
+    except SandboxError:
+        return None
+
+
 def get_client(module: AnsibleModule) -> Any:
     """Create a SandboxClient from module params."""
     try:
