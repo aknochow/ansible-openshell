@@ -165,6 +165,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_workspace,
     sandbox_to_dict,
 )
 
@@ -190,7 +191,7 @@ def create_sandbox(module, client):
     providers = module.params.get("providers") or []
     name = module.params.get("name")
     policy = module.params.get("policy") or {}
-    workspace = module.params.get("workspace") or ""
+    workspace = get_workspace(module)
 
     template = openshell_pb2.SandboxTemplate(image=image)
     spec_kwargs = dict(
@@ -254,7 +255,7 @@ def delete_sandbox(module, client):
     name = module.params.get("name")
     if not name:
         module.fail_json(msg="'name' is required when state=absent")
-    workspace = module.params.get("workspace") or ""
+    workspace = get_workspace(module)
 
     try:
         client.get(name, workspace=workspace)

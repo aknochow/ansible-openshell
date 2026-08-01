@@ -69,6 +69,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_workspace,
     sandbox_to_dict,
 )
 
@@ -90,7 +91,7 @@ def main():
         from openshell import SandboxError
 
         name = module.params.get("name")
-        workspace = module.params.get("workspace") or ""
+        workspace = get_workspace(module)
 
         try:
             if name:

@@ -75,6 +75,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_workspace,
 )
 
 # Comfortably under gRPC's default ~1MB max message length — a single
@@ -124,7 +125,7 @@ def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.
 
 
 def exec_or_fail(
-    client, sandbox_id: str, module: AnsibleModule, argv: list[str], stdin: bytes | None = None
+    client: Any, sandbox_id: str, module: AnsibleModule, argv: list[str], stdin: bytes | None = None
 ) -> Any:
     result = client.exec(sandbox_id, argv, stdin=stdin)
     if result.exit_code != 0:
@@ -162,10 +163,7 @@ def main() -> None:
     name = module.params["name"]
     src = module.params["src"]
     dest = module.params["dest"]
-    # Matches sandbox.py/sandbox_info.py's defensive fallback — GATEWAY_ARGSPEC
-    # already defaults workspace to "", but an explicit workspace=None from
-    # Ansible variable resolution would otherwise reach the SDK as None.
-    workspace = module.params.get("workspace") or ""
+    workspace = get_workspace(module)
 
     if not os.path.isdir(src):
         module.fail_json(msg="src '%s' is not a directory" % src)
@@ -211,13 +209,13 @@ def main() -> None:
             client, sandbox.id, module, ["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"]
         )
         remote_tmp = mktemp_result.stdout.strip()
-        _tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
+        tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
         # Full character-class + suffix match rather than just excluding
         # '/' and '..' — a compromised mktemp could otherwise still return
         # something with shell metacharacters or missing the .tar.gz
         # extension that later steps assume.
         if not remote_tmp.startswith("/tmp/.ansible-openshell-upload-") or not re.fullmatch(
-            r"[A-Za-z0-9._-]+\.tar\.gz", _tmp_suffix
+            r"[A-Za-z0-9._-]+\.tar\.gz", tmp_suffix
         ):
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 

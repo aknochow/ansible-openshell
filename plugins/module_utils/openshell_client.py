@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from urllib.parse import urlparse
 
 from ansible.module_utils.basic import AnsibleModule, env_fallback
@@ -61,7 +62,7 @@ PHASE_NAMES = {
 }
 
 
-def sandbox_to_dict(ref) -> dict:
+def sandbox_to_dict(ref: Any) -> dict:
     """Shared by sandbox.py and sandbox_info.py — same SandboxRef shape."""
     return dict(
         id=ref.id,
@@ -70,6 +71,16 @@ def sandbox_to_dict(ref) -> dict:
         phase=PHASE_NAMES.get(ref.status.phase, str(ref.status.phase)),
         policy_version=ref.status.current_policy_version,
     )
+
+
+def get_workspace(module: AnsibleModule) -> str:
+    """Read the workspace param with the '' fallback every module needs.
+
+    GATEWAY_ARGSPEC already defaults workspace to "", but an explicit
+    workspace=None from Ansible variable resolution would otherwise reach
+    the SDK as None instead of "" — .get(...) or "" guards against that.
+    """
+    return module.params.get("workspace") or ""
 
 
 def get_client(module: AnsibleModule):

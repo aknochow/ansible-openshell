@@ -101,6 +101,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_workspace,
 )
 
 
@@ -131,7 +132,7 @@ def main():
         env = module.params.get("environment") or {}
         stdin_data = module.params.get("stdin")
         cmd_timeout = module.params.get("command_timeout")
-        workspace = module.params.get("workspace") or ""
+        workspace = get_workspace(module)
 
         try:
             # SandboxClient.exec() takes a globally-unique sandbox_id and has
@@ -144,10 +145,25 @@ def main():
             # same-named sandbox elsewhere. get() only resolves names
             # though (confirmed live: passing an ID raises NOT_FOUND), so
             # fall back to treating `sandbox` as an already-resolved ID —
-            # exec() itself will raise loudly if it's neither.
+            # exec() itself will raise loudly if it's neither. Only do that
+            # fallback for a genuine NOT_FOUND, though — swallowing every
+            # RpcError here would mask real problems (gateway unreachable,
+            # bad credentials) behind a confusing "sandbox not found" from
+            # exec() instead of the actual error. SandboxError itself is a
+            # bare RuntimeError with no status info (and this SDK version's
+            # get() doesn't actually raise it — grpc.RpcError propagates
+            # unwrapped), so there's no finer-grained signal available for
+            # that branch; keep the fallback there since it matches prior
+            # behavior.
             try:
                 sandbox_id = client.get(sandbox_name, workspace=workspace).id
-            except (SandboxError, grpc.RpcError):
+            except grpc.RpcError as e:
+                if hasattr(e, "code") and e.code() == grpc.StatusCode.NOT_FOUND:
+                    sandbox_id = sandbox_name
+                else:
+                    module.fail_json(msg="failed to resolve sandbox '%s': %s" % (sandbox_name, e))
+                    return
+            except SandboxError:
                 sandbox_id = sandbox_name
             result = client.exec(
                 sandbox_id,
