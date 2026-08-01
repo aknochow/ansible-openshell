@@ -45,7 +45,7 @@ class TestSandboxModule:
         assert PHASE_NAMES[3] == "ERROR"
 
     def test_sandbox_to_dict(self, mock_openshell):
-        from ansible_collections.aknochow.openshell.plugins.modules.sandbox import (
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             sandbox_to_dict,
         )
 

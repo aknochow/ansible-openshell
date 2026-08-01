@@ -98,8 +98,18 @@ def get_or_none(client: Any, name: str, workspace: str, module: AnsibleModule) -
     except grpc.RpcError as e:
         if hasattr(e, "code") and e.code() == grpc.StatusCode.NOT_FOUND:
             return None
+        # Deliberately not broadening this to also treat e.g.
+        # INVALID_ARGUMENT as "not found": sandbox_exec.py's name-or-ID
+        # fallback would benefit (an ID that fails a by-name lookup with
+        # something other than NOT_FOUND), but create/delete_sandbox use
+        # this same helper for a genuinely different purpose — a user's
+        # malformed `name` triggering INVALID_ARGUMENT should fail loudly,
+        # not be silently treated as "doesn't exist yet" and risk creating
+        # a duplicate. Confirmed live against the real gateway that an
+        # ID passed as a name lookup returns NOT_FOUND, not
+        # INVALID_ARGUMENT, so this hasn't been an issue in practice.
         module.fail_json(msg="failed to look up sandbox '%s': %s" % (name, e))
-        return None
+        return None  # unreachable — fail_json raises SystemExit
     except SandboxError:
         return None
 

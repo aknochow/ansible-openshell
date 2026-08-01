@@ -123,6 +123,7 @@ def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.
 def exec_or_fail(
     client: Any, sandbox_id: str, module: AnsibleModule, argv: list[str], stdin: bytes | None = None
 ) -> Any:
+    """Run a command in the sandbox, calling module.fail_json on non-zero exit."""
     result = client.exec(sandbox_id, argv, stdin=stdin)
     if result.exit_code != 0:
         module.fail_json(
@@ -220,9 +221,9 @@ def main() -> None:
         # '/' and '..' — a compromised mktemp could otherwise still return
         # something with shell metacharacters or missing the .tar.gz
         # extension that later steps assume.
-        if not remote_tmp.startswith("/tmp/.ansible-openshell-upload-") or not re.fullmatch(
-            r"[A-Za-z0-9._-]+\.tar\.gz", tmp_suffix
-        ):
+        has_expected_prefix = remote_tmp.startswith("/tmp/.ansible-openshell-upload-")
+        has_expected_suffix = re.fullmatch(r"[A-Za-z0-9._-]+\.tar\.gz", tmp_suffix)
+        if not has_expected_prefix or not has_expected_suffix:
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
