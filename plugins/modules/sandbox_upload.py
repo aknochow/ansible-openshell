@@ -75,6 +75,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_or_none,
     get_workspace,
 )
 
@@ -179,10 +180,9 @@ def main() -> None:
 
     client = get_client(module)
     try:
-        try:
-            sandbox = client.get(name, workspace=workspace)
-        except (SandboxError, grpc.RpcError) as e:
-            module.fail_json(msg="sandbox '%s' not found: %s" % (name, e))
+        sandbox = get_or_none(client, name, workspace, module)
+        if sandbox is None:
+            module.fail_json(msg="sandbox '%s' not found" % name)
             return
 
         real_src = os.path.realpath(src)
@@ -249,7 +249,13 @@ def main() -> None:
     except (SandboxError, grpc.RpcError) as e:
         module.fail_json(msg=str(e))
     finally:
-        client.close()
+        # Best-effort — an exception raised here (rather than returned)
+        # would propagate past this function uncaught, masking whatever
+        # error (if any) the try block above already reported.
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

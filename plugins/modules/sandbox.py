@@ -297,7 +297,13 @@ def main():
         else:
             delete_sandbox(module, client)
     finally:
-        client.close()
+        # Best-effort — an exception raised here would propagate past
+        # this function uncaught, masking whatever error (if any) the
+        # try block above already reported.
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
