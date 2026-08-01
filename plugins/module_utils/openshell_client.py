@@ -83,7 +83,7 @@ def get_workspace(module: AnsibleModule) -> str:
     return module.params.get("workspace") or ""
 
 
-def get_client(module: AnsibleModule):
+def get_client(module: AnsibleModule) -> Any:
     """Create a SandboxClient from module params."""
     try:
         from openshell import SandboxClient

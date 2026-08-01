@@ -135,26 +135,14 @@ def main():
         workspace = get_workspace(module)
 
         try:
-            # SandboxClient.exec() takes a globally-unique sandbox_id and has
-            # no workspace kwarg — only client.get() is workspace-scoped
-            # (sandbox names are only unique within a workspace, not
-            # globally). Resolve `sandbox` (name or ID, per this module's
-            # own docs/examples) through get() first so a bare name is
-            # disambiguated within the caller's requested workspace rather
-            # than passed straight to exec() and silently hitting a
-            # same-named sandbox elsewhere. get() only resolves names
-            # though (confirmed live: passing an ID raises NOT_FOUND), so
-            # fall back to treating `sandbox` as an already-resolved ID —
-            # exec() itself will raise loudly if it's neither. Only do that
-            # fallback for a genuine NOT_FOUND, though — swallowing every
-            # RpcError here would mask real problems (gateway unreachable,
-            # bad credentials) behind a confusing "sandbox not found" from
-            # exec() instead of the actual error. SandboxError itself is a
-            # bare RuntimeError with no status info (and this SDK version's
-            # get() doesn't actually raise it — grpc.RpcError propagates
-            # unwrapped), so there's no finer-grained signal available for
-            # that branch; keep the fallback there since it matches prior
-            # behavior.
+            # exec() takes a globally-unique sandbox_id and has no workspace
+            # kwarg — only get() is workspace-scoped, since names (unlike
+            # IDs) are only unique within a workspace. Resolve `sandbox`
+            # (name or ID, per this module's docs) through get() first, but
+            # only fall back to treating it as an already-resolved ID on a
+            # genuine NOT_FOUND — any other error should fail loudly rather
+            # than mask a real problem (e.g. an unreachable gateway) behind
+            # a confusing error from exec() instead.
             try:
                 sandbox_id = client.get(sandbox_name, workspace=workspace).id
             except grpc.RpcError as e:

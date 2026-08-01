@@ -87,6 +87,13 @@ from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_clien
 # meant for arbitrarily large transfers.
 CHUNK_SIZE = 800_000
 
+# The whole archive is built in memory (io.BytesIO) before any chunking
+# happens, so an oversized src silently balloons controller memory before
+# CHUNK_SIZE ever comes into play. This is a guardrail against pointing
+# src at the wrong directory, not a real transfer size limit — 100MB
+# already implies thousands of round-trip exec() calls at CHUNK_SIZE.
+MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
+
 
 def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.TarInfo | None:
     """Drop tar members whose resolved path escapes the source directory.
@@ -200,6 +207,11 @@ def main() -> None:
                 filter=lambda tarinfo: reject_escaping_members(tarinfo, real_src),
             )
         tar_bytes = buf.getvalue()
+        if len(tar_bytes) > MAX_ARCHIVE_BYTES:
+            module.fail_json(
+                msg="compressed archive is %d bytes, exceeding the %d byte limit"
+                % (len(tar_bytes), MAX_ARCHIVE_BYTES)
+            )
 
         # mktemp (not a locally-constructed random name) so the remote
         # path is created atomically — a predictable name written via a
