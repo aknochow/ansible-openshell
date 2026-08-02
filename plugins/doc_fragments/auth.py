@@ -41,4 +41,13 @@ options:
       - If the value is not specified, the value of the E(OPENSHELL_TIMEOUT) environment variable will be used.
     type: float
     default: 30.0
+  workspace:
+    description:
+      - Workspace to scope sandbox operations to.
+      - Gateways that don't implement workspace support yet accept and
+        round-trip an empty string, so the default is safe even against
+        those.
+      - If the value is not specified, the value of the E(OPENSHELL_WORKSPACE) environment variable will be used.
+    type: str
+    default: ""
 """

@@ -107,6 +107,11 @@ def main():
     parser.add_argument("--tls-ca", default=None)
     parser.add_argument("--bearer-token", default=None)
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
+    parser.add_argument(
+        "--workspace",
+        default="",
+        help="Workspace the sandbox belongs to (openshell>=0.0.88; empty string works against gateways without workspace support)",
+    )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
 
@@ -114,7 +119,13 @@ def main():
 
     client = build_client(args)
     try:
-        sandbox = client.get(args.sandbox)
+        sandbox = client.get(args.sandbox, workspace=args.workspace)
+        # SandboxClient has no public wrapper for CreateSshSession/ForwardTcp
+        # (unlike CreateSandbox, which client.create() covers) — reaching
+        # into client._channel is the only way to reach these RPCs today.
+        # Known limitation, not fixable without an SDK change; pin the
+        # openshell version constraint in setup.py/galaxy.yml if this ever
+        # needs to track a channel-shape change upstream.
         stub = openshell_pb2_grpc.OpenShellStub(client._channel)
 
         session = stub.CreateSshSession(

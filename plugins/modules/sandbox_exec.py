@@ -101,6 +101,8 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_or_none,
+    get_workspace,
 )
 
 
@@ -131,10 +133,20 @@ def main():
         env = module.params.get("environment") or {}
         stdin_data = module.params.get("stdin")
         cmd_timeout = module.params.get("command_timeout")
+        workspace = get_workspace(module)
 
         try:
+            # exec() takes a globally-unique sandbox_id and has no workspace
+            # kwarg — only get() is workspace-scoped, since names (unlike
+            # IDs) are only unique within a workspace. Resolve `sandbox`
+            # (name or ID, per this module's docs) through get_or_none()
+            # first; a confirmed-absent lookup means `sandbox` was already
+            # an ID (get_or_none only resolves names), so fall back to it
+            # as-is — exec() itself will raise loudly if it's neither.
+            ref = get_or_none(client, sandbox_name, workspace, module)
+            sandbox_id = ref.id if ref is not None else sandbox_name
             result = client.exec(
-                sandbox_name,
+                sandbox_id,
                 command,
                 workdir=workdir,
                 env=env,
@@ -150,7 +162,13 @@ def main():
         except (SandboxError, grpc.RpcError) as e:
             module.fail_json(msg=str(e))
     finally:
-        client.close()
+        # Best-effort — an exception raised here would propagate past
+        # this function uncaught, masking whatever error (if any) the
+        # try block above already reported.
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

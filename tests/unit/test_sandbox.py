@@ -36,7 +36,7 @@ def mock_openshell():
 
 class TestSandboxModule:
     def test_phase_names_mapping(self, mock_openshell):
-        from ansible_collections.aknochow.openshell.plugins.modules.sandbox import (
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             PHASE_NAMES,
         )
 
@@ -45,19 +45,21 @@ class TestSandboxModule:
         assert PHASE_NAMES[3] == "ERROR"
 
     def test_sandbox_to_dict(self, mock_openshell):
-        from ansible_collections.aknochow.openshell.plugins.modules.sandbox import (
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             sandbox_to_dict,
         )
 
         ref = MagicMock()
         ref.id = "sandbox-123"
         ref.name = "test-sandbox"
-        ref.phase = 2
-        ref.current_policy_version = 1
+        ref.workspace = "test-workspace"
+        ref.status.phase = 2
+        ref.status.current_policy_version = 1
 
         result = sandbox_to_dict(ref)
         assert result["id"] == "sandbox-123"
         assert result["name"] == "test-sandbox"
+        assert result["workspace"] == "test-workspace"
         assert result["phase"] == "READY"
         assert result["policy_version"] == 1
 
@@ -67,7 +69,14 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"image": None, "name": None, "environment": {}, "wait": True, "wait_timeout": 300}
+        module.params = {
+            "image": None,
+            "name": None,
+            "environment": {},
+            "wait": True,
+            "wait_timeout": 300,
+            "workspace": "",
+        }
         client = MagicMock()
 
         create_sandbox(module, client)
@@ -80,7 +89,7 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"name": None, "wait": True, "wait_timeout": 60}
+        module.params = {"name": None, "wait": True, "wait_timeout": 60, "workspace": ""}
         client = MagicMock()
 
         delete_sandbox(module, client)
@@ -93,12 +102,13 @@ class TestSandboxModule:
         )
 
         module = MagicMock()
-        module.params = {"name": "missing-sandbox", "wait": True, "wait_timeout": 60}
+        module.params = {"name": "missing-sandbox", "wait": True, "wait_timeout": 60, "workspace": "my-workspace"}
         client = MagicMock()
         client.get.side_effect = mock_openshell.SandboxError("not found")
 
         delete_sandbox(module, client)
         module.exit_json.assert_called_once_with(changed=False)
+        client.get.assert_called_once_with("missing-sandbox", workspace="my-workspace")
 
 
 class TestSandboxExecModule:
@@ -113,7 +123,11 @@ class TestSandboxExecModule:
         mock_result.stdout = "hello"
         mock_result.stderr = ""
 
+        mock_sandbox_ref = MagicMock()
+        mock_sandbox_ref.id = "sandbox-123"
+
         mock_client = MagicMock()
+        mock_client.get.return_value = mock_sandbox_ref
         mock_client.exec.return_value = mock_result
         mock_openshell.SandboxClient.return_value = mock_client
 
@@ -130,6 +144,7 @@ class TestSandboxExecModule:
                 "tls_ca": None,
                 "bearer_token": None,
                 "timeout": 30.0,
+                "workspace": "",
                 "sandbox": "test-sandbox",
                 "command": ["echo", "hello"],
                 "workdir": None,
@@ -141,6 +156,20 @@ class TestSandboxExecModule:
             mock_get_client.return_value = mock_client
 
             main()
+            # Verifies the name-to-ID resolution added when workspace scoping
+            # landed: exec() must receive the ID that get() resolved to
+            # (sandbox-123), not the raw "test-sandbox" param — a bare
+            # unconfigured mock_client.get() would let a MagicMock leak
+            # through here instead, without failing the assertion below.
+            mock_client.get.assert_called_once_with("test-sandbox", workspace="")
+            mock_client.exec.assert_called_once_with(
+                "sandbox-123",
+                ["echo", "hello"],
+                workdir=None,
+                env={},
+                stdin=None,
+                timeout_seconds=None,
+            )
             mock_module.exit_json.assert_called_once_with(
                 changed=True, rc=0, stdout="hello", stderr=""
             )

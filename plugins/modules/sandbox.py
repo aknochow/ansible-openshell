@@ -146,6 +146,10 @@ sandbox:
       description: Sandbox name.
       type: str
       returned: always
+    workspace:
+      description: Workspace the sandbox belongs to.
+      type: str
+      returned: always
     phase:
       description: Current sandbox phase (e.g., READY, PROVISIONING, ERROR).
       type: str
@@ -156,33 +160,20 @@ sandbox:
       returned: always
 """
 
+from typing import Any
+
 from ansible.module_utils.basic import AnsibleModule
 
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_or_none,
+    get_workspace,
+    sandbox_to_dict,
 )
 
-PHASE_NAMES = {
-    0: "UNSPECIFIED",
-    1: "PROVISIONING",
-    2: "READY",
-    3: "ERROR",
-    4: "DELETING",
-    5: "UNKNOWN",
-}
 
-
-def sandbox_to_dict(ref):
-    return dict(
-        id=ref.id,
-        name=ref.name,
-        phase=PHASE_NAMES.get(ref.phase, str(ref.phase)),
-        policy_version=ref.current_policy_version,
-    )
-
-
-def create_sandbox(module, client):
+def create_sandbox(module: AnsibleModule, client: Any) -> None:
     from openshell import SandboxError
 
     try:
@@ -191,7 +182,7 @@ def create_sandbox(module, client):
         module.fail_json(msg="grpcio is required")
 
     try:
-        from openshell._proto import openshell_pb2, openshell_pb2_grpc, sandbox_pb2
+        from openshell._proto import openshell_pb2, sandbox_pb2
     except ImportError:
         module.fail_json(msg="openshell proto bindings not found")
 
@@ -203,6 +194,7 @@ def create_sandbox(module, client):
     providers = module.params.get("providers") or []
     name = module.params.get("name")
     policy = module.params.get("policy") or {}
+    workspace = get_workspace(module)
 
     template = openshell_pb2.SandboxTemplate(image=image)
     spec_kwargs = dict(
@@ -229,41 +221,31 @@ def create_sandbox(module, client):
 
     try:
         if name:
-            try:
-                existing = client.get(name)
+            existing = get_or_none(client, name, workspace, module)
+            if existing is not None:
                 module.exit_json(changed=False, sandbox=sandbox_to_dict(existing))
                 return
-            except (SandboxError, grpc.RpcError):
-                pass
 
-        request = openshell_pb2.CreateSandboxRequest(spec=spec)
-        if name:
-            request.name = name
-
-        stub = openshell_pb2_grpc.OpenShellStub(client._channel)
-        response = stub.CreateSandbox(request, timeout=client._timeout)
-        ref_proto = response.sandbox
-        from openshell import SandboxRef, SandboxStatusRef
-
-        ref = SandboxRef(
-            id=ref_proto.metadata.id,
-            name=ref_proto.metadata.name,
-            status=SandboxStatusRef(
-                phase=ref_proto.status.phase,
-                current_policy_version=ref_proto.status.current_policy_version,
-            ),
-        )
+        # client.create() is the SDK's own public wrapper for CreateSandbox —
+        # it builds the SandboxRef (workspace included) from the response and
+        # raises SandboxError if the gateway returns an empty id, so there's
+        # no need to reach into client._channel/_timeout and reimplement the
+        # RPC call by hand.
+        ref = client.create(workspace=workspace, spec=spec, name=name)
 
         if module.params.get("wait"):
             timeout = module.params.get("wait_timeout") or 300
-            ref = client.wait_ready(ref.name, timeout_seconds=float(timeout))
+            # Use the workspace the gateway actually recorded on the sandbox
+            # (ref.workspace), not the request's — the two should always
+            # agree, but the ref is the server's own source of truth.
+            ref = client.wait_ready(ref.name, workspace=ref.workspace, timeout_seconds=float(timeout))
 
         module.exit_json(changed=True, sandbox=sandbox_to_dict(ref))
     except (SandboxError, grpc.RpcError) as e:
         module.fail_json(msg=str(e))
 
 
-def delete_sandbox(module, client):
+def delete_sandbox(module: AnsibleModule, client: Any) -> None:
     from openshell import SandboxError
 
     try:
@@ -274,18 +256,17 @@ def delete_sandbox(module, client):
     name = module.params.get("name")
     if not name:
         module.fail_json(msg="'name' is required when state=absent")
+    workspace = get_workspace(module)
 
-    try:
-        client.get(name)
-    except (SandboxError, grpc.RpcError):
+    if get_or_none(client, name, workspace, module) is None:
         module.exit_json(changed=False)
         return
 
     try:
-        client.delete(name)
+        client.delete(name, workspace=workspace)
         if module.params.get("wait"):
             timeout = module.params.get("wait_timeout") or 60
-            client.wait_deleted(name, timeout_seconds=float(timeout))
+            client.wait_deleted(name, workspace=workspace, timeout_seconds=float(timeout))
         module.exit_json(changed=True)
     except (SandboxError, grpc.RpcError) as e:
         module.fail_json(msg=str(e))
@@ -316,7 +297,13 @@ def main():
         else:
             delete_sandbox(module, client)
     finally:
-        client.close()
+        # Best-effort — an exception raised here would propagate past
+        # this function uncaught, masking whatever error (if any) the
+        # try block above already reported.
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

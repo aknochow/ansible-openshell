@@ -53,6 +53,9 @@ sandboxes:
     name:
       description: Sandbox name.
       type: str
+    workspace:
+      description: Workspace the sandbox belongs to.
+      type: str
     phase:
       description: Current sandbox phase.
       type: str
@@ -66,25 +69,9 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,
+    get_workspace,
+    sandbox_to_dict,
 )
-
-PHASE_NAMES = {
-    0: "UNSPECIFIED",
-    1: "PROVISIONING",
-    2: "READY",
-    3: "ERROR",
-    4: "DELETING",
-    5: "UNKNOWN",
-}
-
-
-def sandbox_to_dict(ref):
-    return dict(
-        id=ref.id,
-        name=ref.name,
-        phase=PHASE_NAMES.get(ref.phase, str(ref.phase)),
-        policy_version=ref.current_policy_version,
-    )
 
 
 def main():
@@ -104,13 +91,14 @@ def main():
         from openshell import SandboxError
 
         name = module.params.get("name")
+        workspace = get_workspace(module)
 
         try:
             if name:
-                ref = client.get(name)
+                ref = client.get(name, workspace=workspace)
                 module.exit_json(changed=False, sandboxes=[sandbox_to_dict(ref)])
             else:
-                refs = client.list()
+                refs = client.list(workspace=workspace)
                 module.exit_json(
                     changed=False,
                     sandboxes=[sandbox_to_dict(r) for r in refs],
@@ -118,7 +106,13 @@ def main():
         except (SandboxError, grpc.RpcError) as e:
             module.fail_json(msg=str(e))
     finally:
-        client.close()
+        # Best-effort — an exception raised here would propagate past
+        # this function uncaught, masking whatever error (if any) the
+        # try block above already reported.
+        try:
+            client.close()
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
