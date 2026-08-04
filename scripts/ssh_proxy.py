@@ -27,6 +27,14 @@ ansible_ssh_common_args ProxyCommand) would otherwise expose it via
 /proc/*/cmdline as a plain CLI argument:
 
   OPENSHELL_BEARER_TOKEN="$TOKEN" python3 ssh_proxy.py --gateway https://gw --sandbox my-sandbox
+
+Or, to avoid even the brief argv exposure of wrapping the command in
+`env VAR=value ...` (OpenSSH always runs ProxyCommand as `exec <cmd>`,
+and a bare `VAR=value cmd` prefix does not work with exec -- see
+--bearer-token-file below), write the token to a file the caller
+controls the permissions of and pass its path instead:
+
+  python3 ssh_proxy.py --gateway https://gw --bearer-token-file /path/to/token --sandbox my-sandbox
 """
 
 from __future__ import annotations
@@ -120,6 +128,15 @@ def main():
         "(same var name aknochow.openshell modules already fall back to) -- "
         "avoids the token being visible via /proc/*/cmdline as a CLI arg.",
     )
+    parser.add_argument(
+        "--bearer-token-file",
+        default=None,
+        help="Read the bearer token from this file (stripped of trailing "
+        "whitespace) instead of --bearer-token or the env var -- avoids "
+        "even the brief argv exposure of a `env VAR=value` wrapper during "
+        "its own execve() call. Takes precedence over both --bearer-token "
+        "and OPENSHELL_BEARER_TOKEN.",
+    )
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
     parser.add_argument(
         "--workspace",
@@ -128,7 +145,10 @@ def main():
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
-    if args.bearer_token is None:
+    if args.bearer_token_file:
+        with open(args.bearer_token_file, encoding="utf-8") as f:
+            args.bearer_token = f.read().strip()
+    elif args.bearer_token is None:
         args.bearer_token = os.environ.get("OPENSHELL_BEARER_TOKEN")
 
     from openshell._proto import openshell_pb2, openshell_pb2_grpc
