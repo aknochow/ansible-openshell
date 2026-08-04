@@ -20,6 +20,13 @@ Usage (as an OpenSSH ProxyCommand):
 Or with bearer-token (OIDC) auth instead of mTLS:
 
   python3 ssh_proxy.py --gateway https://gw --bearer-token "$TOKEN" --sandbox my-sandbox
+
+The token can also come from the OPENSHELL_BEARER_TOKEN env var instead
+of --bearer-token -- preferred when the caller (e.g. an Ansible
+ansible_ssh_common_args ProxyCommand) would otherwise expose it via
+/proc/*/cmdline as a plain CLI argument:
+
+  OPENSHELL_BEARER_TOKEN="$TOKEN" python3 ssh_proxy.py --gateway https://gw --sandbox my-sandbox
 """
 
 from __future__ import annotations
@@ -105,7 +112,13 @@ def main():
     parser.add_argument("--tls-cert", default=None)
     parser.add_argument("--tls-key", default=None)
     parser.add_argument("--tls-ca", default=None)
-    parser.add_argument("--bearer-token", default=None)
+    parser.add_argument(
+        "--bearer-token",
+        default=None,
+        help="Falls back to the OPENSHELL_BEARER_TOKEN env var if not given "
+        "(same var name aknochow.openshell modules already fall back to) -- "
+        "avoids the token being visible via /proc/*/cmdline as a CLI arg.",
+    )
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
     parser.add_argument(
         "--workspace",
@@ -114,6 +127,10 @@ def main():
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
+    if args.bearer_token is None:
+        import os
+
+        args.bearer_token = os.environ.get("OPENSHELL_BEARER_TOKEN")
 
     from openshell._proto import openshell_pb2, openshell_pb2_grpc
 
