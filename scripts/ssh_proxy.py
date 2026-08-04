@@ -32,6 +32,7 @@ ansible_ssh_common_args ProxyCommand) would otherwise expose it via
 from __future__ import annotations
 
 import argparse
+import os
 import queue
 import sys
 import threading
@@ -128,8 +129,6 @@ def main():
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
     if args.bearer_token is None:
-        import os
-
         args.bearer_token = os.environ.get("OPENSHELL_BEARER_TOKEN")
 
     from openshell._proto import openshell_pb2, openshell_pb2_grpc
