@@ -75,7 +75,7 @@ def _run_provider_main(module_params):
 PRESENT_PARAMS = dict(
     name="test-provider",
     type="claude",
-    credentials={"api_key": "new-key"},
+    credentials={"api_key": "FAKE-TEST-KEY-NEW-DO-NOT-USE"},
     config={"region": "us-east5"},
     state="present",
 )
@@ -101,7 +101,7 @@ class TestProviderPresent:
         stub_ref = sys.modules["openshell._proto"].openshell_pb2_grpc.OpenShellStub.return_value
         stub_ref.GetProvider.side_effect = FakeRpcError(grpc.StatusCode.NOT_FOUND)
         stub_ref.CreateProvider.return_value = make_provider_response(
-            "claude", {"api_key": "new-key"}, {"region": "us-east5"}
+            "claude", {"api_key": "FAKE-TEST-KEY-NEW-DO-NOT-USE"}, {"region": "us-east5"}
         )
 
         fake_module, stub = _run_provider_main(PRESENT_PARAMS)
@@ -132,7 +132,7 @@ class TestProviderPresent:
         # changed=False and skip UpdateProvider entirely.
         stub_ref = sys.modules["openshell._proto"].openshell_pb2_grpc.OpenShellStub.return_value
         stub_ref.GetProvider.return_value = make_provider_response(
-            "claude", {"api_key": "new-key"}, {"region": "us-east5"}
+            "claude", {"api_key": "FAKE-TEST-KEY-NEW-DO-NOT-USE"}, {"region": "us-east5"}
         )
 
         fake_module, stub = _run_provider_main(PRESENT_PARAMS)
@@ -145,8 +145,8 @@ class TestProviderPresent:
     def test_updates_when_desired_state_differs(self):
         stub_ref = sys.modules["openshell._proto"].openshell_pb2_grpc.OpenShellStub.return_value
         stub_ref.GetProvider.side_effect = [
-            make_provider_response("claude", {"api_key": "old-key"}, {"region": "us-west1"}),
-            make_provider_response("claude", {"api_key": "new-key"}, {"region": "us-east5"}),
+            make_provider_response("claude", {"api_key": "FAKE-TEST-KEY-OLD-DO-NOT-USE"}, {"region": "us-west1"}),
+            make_provider_response("claude", {"api_key": "FAKE-TEST-KEY-NEW-DO-NOT-USE"}, {"region": "us-east5"}),
         ]
 
         fake_module, stub = _run_provider_main(PRESENT_PARAMS)
@@ -158,7 +158,7 @@ class TestProviderPresent:
     def test_update_permission_denied_fails_loudly(self):
         stub_ref = sys.modules["openshell._proto"].openshell_pb2_grpc.OpenShellStub.return_value
         stub_ref.GetProvider.return_value = make_provider_response(
-            "claude", {"api_key": "old-key"}, {"region": "us-west1"}
+            "claude", {"api_key": "FAKE-TEST-KEY-OLD-DO-NOT-USE"}, {"region": "us-west1"}
         )
         stub_ref.UpdateProvider.side_effect = FakeRpcError(grpc.StatusCode.PERMISSION_DENIED)
 

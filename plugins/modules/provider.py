@@ -195,13 +195,25 @@ def main():
                     ),
                     timeout=client._timeout,
                 )
+            except grpc.RpcError as e:
+                module.fail_json(msg=f"Failed to update provider: {e}")
+                return
+
+            # A separate try/except from the UpdateProvider call above: this
+            # is a distinct RPC that can fail independently, and lumping it
+            # into the same except would misreport a successful update as
+            # "Failed to update provider" if only this re-fetch failed.
+            try:
                 resp = stub.GetProvider(
                     openshell_pb2.GetProviderRequest(name=name),
                     timeout=client._timeout,
                 )
                 module.exit_json(changed=True, provider=provider_to_dict(resp.provider))
             except grpc.RpcError as e:
-                module.fail_json(msg=f"Failed to update provider: {e}")
+                module.fail_json(
+                    msg=f"Provider '{name}' was updated but could not be re-read: {e}"
+                )
+                return
 
         else:
             try:
@@ -226,6 +238,7 @@ def main():
                 module.exit_json(changed=True)
             except grpc.RpcError as e:
                 module.fail_json(msg=f"Failed to delete provider: {e}")
+                return
     finally:
         client.close()
 
