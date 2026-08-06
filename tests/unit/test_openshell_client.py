@@ -100,6 +100,61 @@ class TestGetClient:
         assert result is None
         mock_openshell.SandboxClient.assert_not_called()
 
+    def test_https_gateway_without_tls_files_does_not_go_plaintext(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            get_client,
+        )
+
+        module = MagicMock()
+        module.params = {
+            "gateway": "https://openshell.apps.example.com",
+            "tls_cert": None,
+            "tls_key": None,
+            "tls_ca": None,
+            "bearer_token": "my-token",
+            "timeout": 30.0,
+        }
+
+        get_client(module)
+
+        # Regression check: build_tls_config() returns None (its own
+        # docstring: "plaintext channel") when no TLS files are given.
+        # Without this fix, an https:// gateway relying on bearer-token-
+        # only auth (a real, documented pattern -- see ssh_proxy.py's own
+        # usage) would silently get tls=None passed straight through to
+        # SandboxClient, i.e. a plaintext connection despite the https://
+        # URL implying otherwise. Fails against the pre-fix code (tls is
+        # None); passes once the https-with-no-TLS-files case constructs
+        # a bare TlsConfig() instead, matching ssh_proxy.py's own fallback.
+        mock_openshell.TlsConfig.assert_called_once_with()
+        call_kwargs = mock_openshell.SandboxClient.call_args.kwargs
+        assert call_kwargs["tls"] is mock_openshell.TlsConfig.return_value
+
+    def test_http_gateway_stays_plaintext(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            get_client,
+        )
+
+        module = MagicMock()
+        module.params = {
+            "gateway": "http://openshell.internal.example.com",
+            "tls_cert": None,
+            "tls_key": None,
+            "tls_ca": None,
+            "bearer_token": None,
+            "timeout": 30.0,
+        }
+
+        get_client(module)
+
+        # An explicit http:// URL should NOT be upgraded -- the fallback
+        # is specifically for https:// URLs whose scheme already implies
+        # an encrypted expectation. A plain http:// target is plaintext
+        # by explicit request, not by silent default.
+        mock_openshell.TlsConfig.assert_not_called()
+        call_kwargs = mock_openshell.SandboxClient.call_args.kwargs
+        assert call_kwargs["tls"] is None
+
     def test_parses_https_url(self, mock_openshell):
         from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             get_client,
