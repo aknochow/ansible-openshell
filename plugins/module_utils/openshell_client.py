@@ -149,6 +149,7 @@ def get_client(module: AnsibleModule) -> Any:
         from openshell import TlsConfig
 
         tls = TlsConfig()
+
     bearer = module.params.get("bearer_token")
     timeout = module.params.get("timeout") or 30.0
 
