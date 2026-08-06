@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import os
 import queue
+import stat
 import sys
 import threading
 
@@ -131,11 +132,9 @@ def main():
     parser.add_argument(
         "--bearer-token-file",
         default=None,
-        help="Read the bearer token from this file (stripped of trailing "
-        "whitespace) instead of --bearer-token or the env var -- avoids "
-        "even the brief argv exposure of a `env VAR=value` wrapper during "
-        "its own execve() call. Takes precedence over both --bearer-token "
-        "and OPENSHELL_BEARER_TOKEN.",
+        help="Read the bearer token from this file (trailing whitespace "
+        "stripped). Takes precedence over --bearer-token and "
+        "OPENSHELL_BEARER_TOKEN.",
     )
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
     parser.add_argument(
@@ -147,6 +146,11 @@ def main():
     args = parser.parse_args()
     if args.bearer_token_file:
         try:
+            st = os.stat(args.bearer_token_file)
+            if not stat.S_ISREG(st.st_mode):
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is not a regular file")
+            if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is too permissive (group/other access)")
             with open(args.bearer_token_file, encoding="utf-8") as f:
                 args.bearer_token = f.read().strip()
         except OSError as exc:
