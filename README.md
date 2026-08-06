@@ -228,7 +228,11 @@ or CLI-registered gateway required.** Only the `openshell` pip package
 ```
 
 Bearer-token (OIDC) auth is also supported: `--bearer-token "$TOKEN"`
-instead of the three `--tls-*` flags.
+instead of the three `--tls-*` flags. The token can also come from the
+`OPENSHELL_BEARER_TOKEN` environment variable (preferred to avoid
+`/proc/*/cmdline` exposure) or from a file via
+`--bearer-token-file /path/to/token` (takes precedence over both, and
+avoids even the brief argv exposure of an `env VAR=value` wrapper).
 
 **Implementation note for future maintainers:** the stdin-forwarding
 side of this relay must use `os.read(fd, n)`, not

@@ -146,8 +146,11 @@ def main():
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
     if args.bearer_token_file:
-        with open(args.bearer_token_file, encoding="utf-8") as f:
-            args.bearer_token = f.read().strip()
+        try:
+            with open(args.bearer_token_file, encoding="utf-8") as f:
+                args.bearer_token = f.read().strip()
+        except OSError as exc:
+            sys.exit(f"ssh_proxy: cannot read --bearer-token-file {args.bearer_token_file!r}: {exc}")
     elif args.bearer_token is None:
         args.bearer_token = os.environ.get("OPENSHELL_BEARER_TOKEN")
 
