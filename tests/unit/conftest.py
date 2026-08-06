@@ -14,7 +14,7 @@ from pathlib import Path
 # collection install`.
 #
 # Layout expected by Ansible:
-#   ansible_collections/ansible/openshell/plugins/...
+#   ansible_collections/aknochow/openshell/plugins/...
 #
 # We create the namespace package hierarchy by inserting the project root's
 # parent directories into sys.path.
@@ -41,7 +41,7 @@ def _create_namespace_shim(prefix: str, collection_name: str, project_root: Path
 
 
 # Build the namespace package path:
-# <tmpdir>/ansible_collections/ansible/openshell -> <project_root>
+# <tmpdir>/ansible_collections/aknochow/openshell -> <project_root>
 _namespace_root = _create_namespace_shim("ansible_openshell_test_", "openshell", _project_root)
 
 sys.path.insert(0, str(_namespace_root))
