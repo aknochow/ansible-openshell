@@ -122,6 +122,7 @@ def get_client(module: AnsibleModule) -> Any:
         module.fail_json(
             msg="The openshell Python SDK is required. Install it with: pip install 'openshell>=0.0.70'"
         )
+        return
 
     gateway_url = module.params["gateway"]
     parsed = urlparse(gateway_url)
