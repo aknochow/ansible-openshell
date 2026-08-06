@@ -153,6 +153,8 @@ def main():
                 sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is too permissive (group/other access)")
             with open(args.bearer_token_file, encoding="utf-8") as f:
                 args.bearer_token = f.read().strip()
+            if not args.bearer_token:
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is empty")
         except OSError as exc:
             sys.exit(f"ssh_proxy: cannot read --bearer-token-file {args.bearer_token_file!r}: {exc}")
     elif args.bearer_token is None:
