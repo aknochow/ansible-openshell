@@ -63,6 +63,43 @@ class TestGatewayArgspec:
 
 
 class TestGetClient:
+    def test_missing_sdk_does_not_construct_a_client(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            get_client,
+        )
+
+        module = MagicMock()
+        module.params = {
+            "gateway": "https://openshell.apps.example.com",
+            "tls_cert": None,
+            "tls_key": None,
+            "tls_ca": None,
+            "bearer_token": None,
+            "timeout": 30.0,
+        }
+
+        # Force `from openshell import SandboxClient` to raise ImportError,
+        # simulating the SDK not being installed -- sys.modules[name] = None
+        # is the standard way to make Python's import machinery raise
+        # ImportError for a specific module without needing an import hook.
+        with patch.dict(sys.modules, {"openshell": None}):
+            result = get_client(module)
+
+        module.fail_json.assert_called_once()
+        assert "openshell" in module.fail_json.call_args.kwargs["msg"].lower()
+        # Regression test: get_client() must return immediately after
+        # fail_json() rather than falling through to code that assumes
+        # SandboxClient was actually imported. A bare MagicMock()'s
+        # fail_json() doesn't raise/exit the way the real
+        # AnsibleModule.fail_json() does, so without an explicit `return`
+        # right after the call, this either raises NameError (SandboxClient
+        # was never bound) or -- worse, if the import partially succeeded
+        # some other way -- silently returns a client built from an
+        # unvalidated state. Either way, this assertion is what actually
+        # catches it.
+        assert result is None
+        mock_openshell.SandboxClient.assert_not_called()
+
     def test_parses_https_url(self, mock_openshell):
         from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
             get_client,
