@@ -113,6 +113,11 @@ def main():
 
     client = get_client(module)
     try:
+        # get_client() above already succeeded, which means `openshell` (and
+        # therefore grpc, which openshell/__init__.py -> .sandbox imports at
+        # true module level) is provably importable -- no separate
+        # try/except ImportError needed for this import specifically.
+        import grpc
         from openshell._proto import datamodel_pb2, openshell_pb2, openshell_pb2_grpc
 
         stub = openshell_pb2_grpc.OpenShellStub(client._channel)
@@ -123,15 +128,62 @@ def main():
             provider_type = module.params.get("type")
             if not provider_type:
                 module.fail_json(msg="'type' is required when state=present")
+                return
 
             credentials = module.params.get("credentials") or {}
             config = module.params.get("config") or {}
 
             try:
-                resp = stub.GetProvider(
+                existing = stub.GetProvider(
                     openshell_pb2.GetProviderRequest(name=name),
                     timeout=client._timeout,
                 )
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.NOT_FOUND:
+                    existing = None
+                else:
+                    # A permission-denied, unauthenticated, or connectivity
+                    # error is NOT "the provider doesn't exist" -- treating
+                    # it that way (the previous bare `except Exception`
+                    # behavior) would silently attempt CreateProvider next,
+                    # masking the real failure.
+                    module.fail_json(msg=f"Failed to look up provider '{name}': {e}")
+                    return
+
+            if existing is None:
+                try:
+                    resp = stub.CreateProvider(
+                        openshell_pb2.CreateProviderRequest(
+                            provider=datamodel_pb2.Provider(
+                                metadata=datamodel_pb2.ObjectMeta(name=name),
+                                type=provider_type,
+                                credentials=credentials,
+                                config=config,
+                            ),
+                        ),
+                        timeout=client._timeout,
+                    )
+                    module.exit_json(changed=True, provider=provider_to_dict(resp.provider))
+                except grpc.RpcError as e:
+                    module.fail_json(msg=f"Failed to create provider: {e}")
+                return
+
+            # Provider already exists -- only update (and report
+            # changed=True) if the desired state actually differs from what
+            # the gateway already has. Reporting changed=True unconditionally
+            # broke idempotency: a second run with identical inputs should
+            # report changed=False.
+            existing_provider = existing.provider
+            needs_update = (
+                existing_provider.type != provider_type
+                or dict(existing_provider.credentials) != credentials
+                or dict(existing_provider.config) != config
+            )
+            if not needs_update:
+                module.exit_json(changed=False, provider=provider_to_dict(existing_provider))
+                return
+
+            try:
                 stub.UpdateProvider(
                     openshell_pb2.UpdateProviderRequest(
                         provider=datamodel_pb2.Provider(
@@ -148,22 +200,8 @@ def main():
                     timeout=client._timeout,
                 )
                 module.exit_json(changed=True, provider=provider_to_dict(resp.provider))
-            except Exception:
-                try:
-                    resp = stub.CreateProvider(
-                        openshell_pb2.CreateProviderRequest(
-                            provider=datamodel_pb2.Provider(
-                                metadata=datamodel_pb2.ObjectMeta(name=name),
-                                type=provider_type,
-                                credentials=credentials,
-                                config=config,
-                            ),
-                        ),
-                        timeout=client._timeout,
-                    )
-                    module.exit_json(changed=True, provider=provider_to_dict(resp.provider))
-                except Exception as e:
-                    module.fail_json(msg=f"Failed to create provider: {e}")
+            except grpc.RpcError as e:
+                module.fail_json(msg=f"Failed to update provider: {e}")
 
         else:
             try:
@@ -171,8 +209,14 @@ def main():
                     openshell_pb2.GetProviderRequest(name=name),
                     timeout=client._timeout,
                 )
-            except Exception:
-                module.exit_json(changed=False)
+            except grpc.RpcError as e:
+                if e.code() == grpc.StatusCode.NOT_FOUND:
+                    module.exit_json(changed=False)
+                else:
+                    # Same fix as the present-path lookup above -- a real
+                    # error is not "already deleted".
+                    module.fail_json(msg=f"Failed to look up provider '{name}': {e}")
+                return
 
             try:
                 stub.DeleteProvider(
@@ -180,7 +224,7 @@ def main():
                     timeout=client._timeout,
                 )
                 module.exit_json(changed=True)
-            except Exception as e:
+            except grpc.RpcError as e:
                 module.fail_json(msg=f"Failed to delete provider: {e}")
     finally:
         client.close()
