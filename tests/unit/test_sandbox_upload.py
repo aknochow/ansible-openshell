@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -81,8 +82,6 @@ class TestRejectEscapingMembers:
 
             assert "./relative_escape" not in names
         finally:
-            import shutil
-
             shutil.rmtree(outside_dir, ignore_errors=True)
 
     def test_hardlink_to_outside_file_rejected(self, mock_openshell, tmp_src):
@@ -109,8 +108,6 @@ class TestRejectEscapingMembers:
             assert "./hardlinked.txt" not in names
             assert "./normal.txt" in names
         finally:
-            import shutil
-
             shutil.rmtree(outside_dir, ignore_errors=True)
 
     def test_hardlink_within_real_src_also_rejected(self, mock_openshell, tmp_src):
@@ -161,6 +158,10 @@ class TestChunkedWrite:
         fake_module, exec_calls = _run_upload_main(
             {"name": "test-sandbox", "src": str(tmp_src), "dest": "/sandbox/checkout"}
         )
+
+        # Catches a silent failure that fake_exec's always-successful
+        # exit_code=0 stub could otherwise mask.
+        fake_module.fail_json.assert_not_called()
 
         write_calls = [c for c in exec_calls if c[2] is not None]
         assert write_calls, "expected at least one chunk-write exec call"
