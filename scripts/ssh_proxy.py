@@ -132,8 +132,8 @@ def main():
     parser.add_argument(
         "--bearer-token-file",
         default=None,
-        help="Read the bearer token from this file (trailing whitespace "
-        "stripped). Takes precedence over --bearer-token and "
+        help="Read the bearer token from this file (leading/trailing "
+        "whitespace stripped). Takes precedence over --bearer-token and "
         "OPENSHELL_BEARER_TOKEN.",
     )
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
