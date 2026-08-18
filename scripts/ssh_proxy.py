@@ -20,12 +20,29 @@ Usage (as an OpenSSH ProxyCommand):
 Or with bearer-token (OIDC) auth instead of mTLS:
 
   python3 ssh_proxy.py --gateway https://gw --bearer-token "$TOKEN" --sandbox my-sandbox
+
+The token can also come from the OPENSHELL_BEARER_TOKEN env var instead
+of --bearer-token -- preferred when the caller (e.g. an Ansible
+ansible_ssh_common_args ProxyCommand) would otherwise expose it via
+/proc/*/cmdline as a plain CLI argument:
+
+  OPENSHELL_BEARER_TOKEN="$TOKEN" python3 ssh_proxy.py --gateway https://gw --sandbox my-sandbox
+
+Or, to avoid even the brief argv exposure of wrapping the command in
+`env VAR=value ...` (OpenSSH always runs ProxyCommand as `exec <cmd>`,
+and a bare `VAR=value cmd` prefix does not work with exec -- see
+--bearer-token-file below), write the token to a file the caller
+controls the permissions of and pass its path instead:
+
+  python3 ssh_proxy.py --gateway https://gw --bearer-token-file /path/to/token --sandbox my-sandbox
 """
 
 from __future__ import annotations
 
 import argparse
+import os
 import queue
+import stat
 import sys
 import threading
 
@@ -105,7 +122,20 @@ def main():
     parser.add_argument("--tls-cert", default=None)
     parser.add_argument("--tls-key", default=None)
     parser.add_argument("--tls-ca", default=None)
-    parser.add_argument("--bearer-token", default=None)
+    parser.add_argument(
+        "--bearer-token",
+        default=None,
+        help="Falls back to the OPENSHELL_BEARER_TOKEN env var if not given "
+        "(same var name aknochow.openshell modules already fall back to) -- "
+        "avoids the token being visible via /proc/*/cmdline as a CLI arg.",
+    )
+    parser.add_argument(
+        "--bearer-token-file",
+        default=None,
+        help="Read the bearer token from this file (leading/trailing "
+        "whitespace stripped). Takes precedence over --bearer-token and "
+        "OPENSHELL_BEARER_TOKEN.",
+    )
     parser.add_argument("--sandbox", required=True, help="Sandbox name")
     parser.add_argument(
         "--workspace",
@@ -114,6 +144,21 @@ def main():
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
+    if args.bearer_token_file:
+        try:
+            st = os.stat(args.bearer_token_file)
+            if not stat.S_ISREG(st.st_mode):
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is not a regular file")
+            if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is too permissive (group/other access)")
+            with open(args.bearer_token_file, encoding="utf-8") as f:
+                args.bearer_token = f.read().strip()
+            if not args.bearer_token:
+                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is empty")
+        except OSError as exc:
+            sys.exit(f"ssh_proxy: cannot read --bearer-token-file {args.bearer_token_file!r}: {exc}")
+    elif args.bearer_token is None:
+        args.bearer_token = os.environ.get("OPENSHELL_BEARER_TOKEN")
 
     from openshell._proto import openshell_pb2, openshell_pb2_grpc
 
