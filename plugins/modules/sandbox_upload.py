@@ -66,7 +66,6 @@ import io
 import os
 import posixpath
 import re
-import shlex
 import tarfile
 from typing import Any
 
@@ -95,6 +94,24 @@ CHUNK_SIZE = 800_000
 # already implies thousands of round-trip exec() calls at CHUNK_SIZE.
 MAX_ARCHIVE_BYTES = 100 * 1024 * 1024
 
+# Each chunk is appended via this instead of shell `cat >> <path>`: shell
+# redirection has no way to say "only if this path is still a regular
+# file, not a symlink something else in the sandbox swapped in since the
+# last chunk" -- `cat >>`/`dd` both follow a symlink transparently. This
+# opens with O_NOFOLLOW, which fails loudly (ELOOP) instead of silently
+# writing through a symlink if the target changed between chunks. mktemp
+# already makes the filename unpredictable (see below); this closes the
+# remaining window where a process already inside the sandbox that
+# *observes* the resulting name could still race a later chunk.
+_APPEND_NOFOLLOW_SCRIPT = (
+    "import os, sys\n"
+    "fd = os.open(sys.argv[1], os.O_WRONLY | os.O_APPEND | os.O_NOFOLLOW)\n"
+    "try:\n"
+    "    os.write(fd, sys.stdin.buffer.read())\n"
+    "finally:\n"
+    "    os.close(fd)\n"
+)
+
 
 def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.TarInfo | None:
     """Drop tar members whose resolved path escapes the source directory."""
@@ -117,6 +134,32 @@ def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.
     full = os.path.realpath(os.path.join(real_src, tarinfo.name))
     if full != real_src and not full.startswith(real_src + os.sep):
         return None
+    # A hard link's target can live anywhere on the same filesystem,
+    # including outside real_src, and there's no way to tell from this
+    # end whether the same inode is ALSO reachable from outside real_src
+    # -- confirmed empirically that tarfile.add() only emits an LNKTYPE
+    # member when it already recorded the same inode earlier in this
+    # exact walk; a hard link whose only other name lives outside
+    # real_src is archived as an ordinary file with that outside
+    # content, not flagged as a link at all. st_nlink > 1 is the only
+    # signal available; reject rather than risk silently including
+    # content from outside real_src.
+    #
+    # This check applies to both REGTYPE (tarfile's first sighting of an
+    # inode) and LNKTYPE (a later sighting of the SAME inode within this
+    # walk) members -- checking tarinfo.isfile() alone misses LNKTYPE
+    # members entirely, which would leave a hardlink reference pointing
+    # at a REGTYPE member this same filter already dropped, a dangling
+    # reference on extraction. Directories and symlinks (already handled
+    # above) are exempt: they're not affected by this multi-link
+    # ambiguity.
+    if not tarinfo.isdir() and not tarinfo.issym():
+        try:
+            st = os.stat(full, follow_symlinks=False)
+        except OSError:
+            return None
+        if st.st_nlink > 1:
+            return None
     return tarinfo
 
 
@@ -233,7 +276,7 @@ def main() -> None:
                     client,
                     sandbox.id,
                     module,
-                    ["sh", "-c", "cat >> " + shlex.quote(remote_tmp)],
+                    ["python3", "-c", _APPEND_NOFOLLOW_SCRIPT, remote_tmp],
                     stdin=tar_bytes[offset : offset + CHUNK_SIZE],
                 )
             exec_or_fail(client, sandbox.id, module, ["tar", "xzf", remote_tmp, "-C", dest])

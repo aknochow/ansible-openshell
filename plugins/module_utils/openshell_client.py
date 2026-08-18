@@ -138,6 +138,18 @@ def get_client(module: AnsibleModule) -> Any:
         endpoint = f"{host}:443"
 
     tls = build_tls_config(module)
+    if tls is None and parsed.scheme == "https":
+        # Matches scripts/ssh_proxy.py's own fallback: an https:// gateway
+        # with no explicit TLS cert/key/CA should still get a bare,
+        # system-trust-store TLS channel (no mTLS) -- not silently
+        # downgrade to plaintext just because the operator didn't also
+        # pass TLS files. build_tls_config()'s own docstring says
+        # returning None means "plaintext channel"; that's the wrong
+        # default for a URL that itself says https.
+        from openshell import TlsConfig
+
+        tls = TlsConfig()
+
     bearer = module.params.get("bearer_token")
     timeout = module.params.get("timeout") or 30.0
 
