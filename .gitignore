@@ -5,3 +5,4 @@ __pycache__/
 *.tar.gz
 .tox/
 .venv/
+*.egg-info/

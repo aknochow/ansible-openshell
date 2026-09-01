@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ansible-openshell"
+version = "0.1.0"
+description = "Ansible collection for OpenShell integration"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "Apache-2.0"
+dependencies = [
+    "ansible-core>=2.16.0,<2.19.0",
+    "openshell>=0.0.70,<0.0.91",
+    "grpcio>=1.60",
+    "protobuf>=4.25",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0,<10.0.0",
+    "pytest-cov>=4.0.0,<7.0.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["plugins*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests/unit"]
+python_files = ["test_*.py"]
+addopts = "-v"
