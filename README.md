@@ -273,3 +273,8 @@ Live-verified against a local mTLS gateway and a remote OIDC gateway
 during development (see `tests/test_local.yml`,
 `tests/test_comprehensive.yml` for real end-to-end coverage of every
 module, including idempotency and error-path assertions).
+
+## License
+
+- **Modules** (`plugins/modules/`): GNU General Public License v3.0+ (`GPL-3.0-or-later`)
+- **Module Utilities, Plugins, Tests & Documentation**: Apache License 2.0 (`Apache-2.0`)
