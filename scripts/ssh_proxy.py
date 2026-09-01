@@ -51,9 +51,9 @@ CHUNK_SIZE = 32768
 
 def build_client(args):
     import pathlib
+    from urllib.parse import urlparse
 
     from openshell import SandboxClient, TlsConfig
-    from urllib.parse import urlparse
 
     parsed = urlparse(args.gateway)
     host = parsed.hostname or args.gateway
@@ -140,7 +140,10 @@ def main():
     parser.add_argument(
         "--workspace",
         default="",
-        help="Workspace the sandbox belongs to (openshell>=0.0.88; empty string works against gateways without workspace support)",
+        help=(
+            "Workspace the sandbox belongs to (openshell>=0.0.88; "
+            "empty string works against gateways without workspace support)"
+        ),
     )
     parser.add_argument("--timeout", type=float, default=30.0)
     args = parser.parse_args()
@@ -150,7 +153,9 @@ def main():
             if not stat.S_ISREG(st.st_mode):
                 sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is not a regular file")
             if st.st_mode & (stat.S_IRWXG | stat.S_IRWXO):
-                sys.exit(f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is too permissive (group/other access)")
+                sys.exit(
+                    f"ssh_proxy: --bearer-token-file {args.bearer_token_file!r} is too permissive (group/other access)"
+                )
             with open(args.bearer_token_file, encoding="utf-8") as f:
                 args.bearer_token = f.read().strip()
             if not args.bearer_token:

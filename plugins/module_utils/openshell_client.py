@@ -89,9 +89,8 @@ def get_or_none(client: Any, name: str, workspace: str, module: AnsibleModule) -
     SandboxError (bare RuntimeError, no status info) is treated as NOT_FOUND
     for backward compatibility — the SDK doesn't raise it in practice today.
     """
-    from openshell import SandboxError
-
     import grpc
+    from openshell import SandboxError
 
     try:
         return client.get(name, workspace=workspace)
