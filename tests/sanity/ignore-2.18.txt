@@ -1,6 +1,0 @@
-plugins/modules/gateway_info.py validate-modules:missing-gplv3-license
-plugins/modules/provider.py validate-modules:missing-gplv3-license
-plugins/modules/sandbox.py validate-modules:missing-gplv3-license
-plugins/modules/sandbox_exec.py validate-modules:missing-gplv3-license
-plugins/modules/sandbox_info.py validate-modules:missing-gplv3-license
-plugins/modules/sandbox_upload.py validate-modules:missing-gplv3-license
