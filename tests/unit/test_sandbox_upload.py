@@ -34,11 +34,11 @@ def tmp_src(tmp_path):
 def _filter_paths(real_src):
     """Run a real tarfile.add() over real_src with the module's own filter,
     returning the set of member names that survived."""
+    import io
+
     from ansible_collections.aknochow.openshell.plugins.modules.sandbox_upload import (
         reject_escaping_members,
     )
-
-    import io
 
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode="w:gz") as tf:

@@ -65,7 +65,6 @@ sandboxes:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     get_client,

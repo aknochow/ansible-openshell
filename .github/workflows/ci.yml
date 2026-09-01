@@ -33,5 +33,8 @@ jobs:
       - name: Install dependencies with lockfile
         run: uv sync --locked --extra dev --python ${{ matrix.python-version }}
 
+      - name: Run ruff lint check
+        run: uv run --python ${{ matrix.python-version }} ruff check .
+
       - name: Run pytest test suite
         run: uv run --python ${{ matrix.python-version }} pytest -v --tb=short
