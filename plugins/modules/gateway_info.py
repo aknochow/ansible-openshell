@@ -37,7 +37,7 @@ EXAMPLES = r"""
 RETURN = r"""
 status:
   description: Gateway health status string.
-  type: str
+  type: invalid_unsupported_type
   returned: always
 version:
   description: Gateway version string.
