@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 """SSH ProxyCommand relay for OpenShell sandboxes — SDK-only, no CLI.
 
 OpenShell has no raw TCP SSH listener: SSH bytes only travel inside a
