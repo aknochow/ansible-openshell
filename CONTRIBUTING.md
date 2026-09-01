@@ -15,6 +15,12 @@ uv sync --extra dev
 uv run pytest -v
 ```
 
+### Running sanity tests:
+Ansible sanity tests require the repository to be within an `ansible_collections/aknochow/openshell` directory hierarchy:
+```bash
+uv run ansible-test sanity --local --python 3.13 -v
+```
+
 ## Commit Standards
 
 - Sign off all commits (`git commit -s`).

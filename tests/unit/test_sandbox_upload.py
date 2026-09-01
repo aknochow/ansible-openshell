@@ -165,7 +165,7 @@ class TestChunkedWrite:
 
         write_calls = [c for c in exec_calls if c[2] is not None]
         assert write_calls, "expected at least one chunk-write exec call"
-        for _, argv, _stdin in write_calls:
+        for call_name, argv, _stdin in write_calls:
             # Regression check: no shell, no `cat >>` -- a shell redirect
             # follows a symlink transparently if the target path was
             # swapped between chunks; python3 -c ... with O_NOFOLLOW does
