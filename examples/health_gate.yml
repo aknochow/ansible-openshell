@@ -1,0 +1,37 @@
+---
+# Example: Gateway health gate for CI/CD pipelines.
+#
+# Run this as a pre-flight check before jobs that depend on
+# the sandbox platform. Fails fast with a clear message if
+# the gateway is unhealthy.
+#
+# Usage:
+#   ansible-playbook examples/health_gate.yml
+#
+# Auth via environment variables:
+#   export OPENSHELL_GATEWAY_URL=https://openshell.apps.example.com
+#   export OPENSHELL_TLS_CERT=/certs/tls.crt
+#   export OPENSHELL_TLS_KEY=/certs/tls.key
+#   export OPENSHELL_TLS_CA=/certs/ca.crt
+
+- name: OpenShell platform health gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Check gateway health
+      aknochow.openshell.gateway_info: {}
+      register: gw
+
+    - name: Report status
+      ansible.builtin.debug:
+        msg: "OpenShell gateway: version={{ gw.version }}, status={{ gw.status }}"
+
+    - name: Gate — fail if unhealthy
+      ansible.builtin.assert:
+        that: gw.healthy
+        fail_msg: >-
+          OpenShell gateway is {{ gw.status }}.
+          Sandbox workloads cannot be scheduled until the platform is healthy.
+        success_msg: "Gateway is healthy — pipeline may proceed."

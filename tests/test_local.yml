@@ -1,0 +1,146 @@
+---
+# Smoke test against a local OpenShell gateway.
+#
+# Usage:
+#   ansible-playbook tests/test_local.yml
+#   ansible-playbook tests/test_local.yml -e gateway_name=openshell   # mTLS local
+
+- name: OpenShell collection smoke test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    gateway_name: "127.0.0.1"
+    gateways:
+      "127.0.0.1":
+        url: "http://127.0.0.1:8081"
+        tls_cert: null
+        tls_key: null
+        tls_ca: null
+      openshell:
+        url: "https://127.0.0.1:17670"
+        tls_cert: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.crt"
+        tls_key: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.key"
+        tls_ca: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/ca.crt"
+
+    gw: "{{ gateways[gateway_name] }}"
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+
+  tasks:
+    # --- Health check ---
+    - name: Check gateway health
+      aknochow.openshell.gateway_info:
+        gateway: "{{ gw.url }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: health
+
+    - name: Show gateway info
+      ansible.builtin.debug:
+        msg: "Gateway {{ gateway_name }}: status={{ health.status }}, version={{ health.version }}, healthy={{ health.healthy }}"
+
+    - name: Assert gateway is healthy
+      ansible.builtin.assert:
+        that: health.healthy
+        fail_msg: "Gateway {{ gateway_name }} is not healthy"
+
+    # --- Create sandbox ---
+    - name: Create a sandbox
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        image: "{{ sandbox_image }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        wait: true
+        wait_timeout: 300
+        state: present
+      register: sandbox
+
+    - name: Show sandbox details
+      ansible.builtin.debug:
+        msg: "Sandbox created: id={{ sandbox.sandbox.id }}, name={{ sandbox.sandbox.name }}, phase={{ sandbox.sandbox.phase }}"
+
+    - name: Assert sandbox is ready
+      ansible.builtin.assert:
+        that:
+          - sandbox.changed
+          - sandbox.sandbox.phase == "READY"
+
+    # --- List sandboxes ---
+    - name: List all sandboxes
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ gw.url }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: all_sandboxes
+
+    - name: Show sandbox count
+      ansible.builtin.debug:
+        msg: "Total sandboxes: {{ all_sandboxes.sandboxes | length }}"
+
+    # --- Execute commands ---
+    - name: Run echo command
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command:
+          - echo
+          - hello from ansible
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: echo_result
+
+    - name: Show command output
+      ansible.builtin.debug:
+        msg: "rc={{ echo_result.rc }}, stdout={{ echo_result.stdout }}"
+
+    - name: Assert echo succeeded
+      ansible.builtin.assert:
+        that:
+          - echo_result.rc == 0
+          - "'hello from ansible' in echo_result.stdout"
+
+    - name: Run a command with environment variables
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gw.url }}"
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command:
+          - /bin/sh
+          - -c
+          - "echo $MY_VAR"
+        environment:
+          MY_VAR: "test-value-123"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: env_result
+
+    - name: Assert env var was set
+      ansible.builtin.assert:
+        that:
+          - env_result.rc == 0
+          - "'test-value-123' in env_result.stdout"
+
+    # --- Cleanup ---
+    - name: Delete the sandbox
+      aknochow.openshell.sandbox:
+        gateway: "{{ gw.url }}"
+        name: "{{ sandbox.sandbox.name }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: deleted
+
+    - name: Assert sandbox was deleted
+      ansible.builtin.assert:
+        that: deleted.changed
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "All tests passed against gateway '{{ gateway_name }}' ({{ gw.url }})"

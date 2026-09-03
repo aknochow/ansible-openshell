@@ -1,0 +1,221 @@
+---
+# Edge case and idempotency tests.
+#
+# Usage:
+#   ansible-playbook tests/test_edge_cases.yml -e gateway_name=openshell
+
+- name: OpenShell collection edge case tests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    gateway_name: "openshell"
+    gateways:
+      "127.0.0.1":
+        url: "http://127.0.0.1:8081"
+        tls_cert: null
+        tls_key: null
+        tls_ca: null
+      openshell:
+        url: "https://127.0.0.1:17670"
+        tls_cert: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.crt"
+        tls_key: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/tls.key"
+        tls_ca: "{{ lookup('env', 'HOME') }}/.config/openshell/gateways/openshell/mtls/ca.crt"
+
+    gw: "{{ gateways[gateway_name] }}"
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+    auth:
+      gateway: "{{ gw.url }}"
+      tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+      tls_key: "{{ gw.tls_key | default(omit, true) }}"
+      tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+
+  tasks:
+    # === IDEMPOTENCY TESTS ===
+
+    - name: "IDEMPOTENCY: Create a sandbox"
+      aknochow.openshell.sandbox:
+        gateway: "{{ auth.gateway }}"
+        name: "test-idempotent"
+        image: "{{ sandbox_image }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: create1
+
+    - name: Assert first create reports changed
+      ansible.builtin.assert:
+        that: create1.changed
+
+    - name: "IDEMPOTENCY: Create same sandbox again"
+      aknochow.openshell.sandbox:
+        gateway: "{{ auth.gateway }}"
+        name: "test-idempotent"
+        image: "{{ sandbox_image }}"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: present
+      register: create2
+
+    - name: Assert second create reports NOT changed
+      ansible.builtin.assert:
+        that: not create2.changed
+        fail_msg: "Idempotency failed — second create reported changed=true"
+
+    - name: Assert both returns have same sandbox ID
+      ansible.builtin.assert:
+        that: create1.sandbox.id == create2.sandbox.id
+
+    # === EXEC EDGE CASES ===
+
+    - name: "EXEC: Non-zero exit code"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ auth.gateway }}"
+        sandbox: "{{ create1.sandbox.id }}"
+        command: ["/bin/sh", "-c", "exit 42"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: exit42
+      failed_when: false
+
+    - name: Assert exit code 42
+      ansible.builtin.assert:
+        that: exit42.rc == 42
+
+    - name: "EXEC: Stderr output"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ auth.gateway }}"
+        sandbox: "{{ create1.sandbox.id }}"
+        command: ["/bin/sh", "-c", "echo error-msg >&2"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: stderr_test
+
+    - name: Assert stderr captured
+      ansible.builtin.assert:
+        that:
+          - stderr_test.rc == 0
+          - "'error-msg' in stderr_test.stderr"
+
+    - name: "EXEC: Multi-line output"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ auth.gateway }}"
+        sandbox: "{{ create1.sandbox.id }}"
+        command: ["/bin/sh", "-c", "echo line1; echo line2; echo line3"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: multiline
+
+    - name: Assert multi-line output
+      ansible.builtin.assert:
+        that:
+          - "'line1' in multiline.stdout"
+          - "'line2' in multiline.stdout"
+          - "'line3' in multiline.stdout"
+
+    - name: "EXEC: Workdir option"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ auth.gateway }}"
+        sandbox: "{{ create1.sandbox.id }}"
+        command: ["pwd"]
+        workdir: "/tmp"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: workdir_test
+
+    - name: Assert workdir was set
+      ansible.builtin.assert:
+        that:
+          - workdir_test.rc == 0
+          - "'/tmp' in workdir_test.stdout"
+
+    # === SANDBOX INFO EDGE CASES ===
+
+    - name: "INFO: Get specific sandbox"
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ auth.gateway }}"
+        name: "test-idempotent"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: specific
+
+    - name: Assert returns exactly one sandbox
+      ansible.builtin.assert:
+        that:
+          - specific.sandboxes | length == 1
+          - specific.sandboxes[0].name == "test-idempotent"
+          - specific.sandboxes[0].phase == "READY"
+
+    # === DELETE IDEMPOTENCY ===
+
+    - name: "IDEMPOTENCY: Delete sandbox"
+      aknochow.openshell.sandbox:
+        gateway: "{{ auth.gateway }}"
+        name: "test-idempotent"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: delete1
+
+    - name: Assert first delete reports changed
+      ansible.builtin.assert:
+        that: delete1.changed
+
+    - name: "IDEMPOTENCY: Delete same sandbox again"
+      aknochow.openshell.sandbox:
+        gateway: "{{ auth.gateway }}"
+        name: "test-idempotent"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+        state: absent
+      register: delete2
+
+    - name: Assert second delete reports NOT changed
+      ansible.builtin.assert:
+        that: not delete2.changed
+        fail_msg: "Idempotency failed — second delete reported changed=true"
+
+    # === ERROR HANDLING ===
+
+    - name: "ERROR: Exec on non-existent sandbox"
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ auth.gateway }}"
+        sandbox: "does-not-exist"
+        command: ["echo", "nope"]
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: bad_exec
+      ignore_errors: true
+
+    - name: Assert exec on missing sandbox fails gracefully
+      ansible.builtin.assert:
+        that: bad_exec.failed
+
+    - name: "ERROR: Get info on non-existent sandbox"
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ auth.gateway }}"
+        name: "does-not-exist-at-all"
+        tls_cert: "{{ gw.tls_cert | default(omit, true) }}"
+        tls_key: "{{ gw.tls_key | default(omit, true) }}"
+        tls_ca: "{{ gw.tls_ca | default(omit, true) }}"
+      register: bad_info
+      ignore_errors: true
+
+    - name: Assert info on missing sandbox fails gracefully
+      ansible.builtin.assert:
+        that: bad_info.failed
+
+    - name: Summary
+      ansible.builtin.debug:
+        msg: "All edge case tests passed against gateway '{{ gateway_name }}'"

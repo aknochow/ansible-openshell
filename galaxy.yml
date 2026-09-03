@@ -1,0 +1,32 @@
+namespace: aknochow
+name: openshell
+version: 0.1.0
+readme: README.md
+authors:
+  - Adam Knochowski <aknochow@redhat.com>
+description: Ansible modules for managing OpenShell sandboxes via the official Python SDK.
+license:
+  - GPL-3.0-or-later
+  - Apache-2.0
+repository: https://github.com/aknochow/ansible-openshell
+tags:
+  - openshell
+  - sandbox
+  - ai
+  - security
+dependencies: {}
+build_ignore:
+  - .git
+  - .github
+  - .agents
+  - .claude
+  - .ansible
+  - .ansible-lint
+  - .gitignore
+  - .pre-commit-config.yaml
+  - .pytest_cache
+  - .venv
+  - .yamllint
+  - __pycache__
+  - "*.egg-info"
+  - tests

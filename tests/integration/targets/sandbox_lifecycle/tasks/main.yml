@@ -1,0 +1,134 @@
+---
+# Integration test: full sandbox lifecycle
+# Requires a live OpenShell gateway and valid credentials.
+#
+# Run with:
+#   ansible-playbook tests/integration/targets/sandbox_lifecycle/tasks/main.yml \
+#     -e gateway=https://openshell.apps.example.com \
+#     -e bearer_token=<token>
+
+- name: Sandbox lifecycle integration test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    gateway: "{{ lookup('env', 'OPENSHELL_GATEWAY_URL') }}"
+    bearer_token: "{{ lookup('env', 'OPENSHELL_BEARER_TOKEN') }}"
+    sandbox_image: "docker.io/library/python:3.12-slim"
+
+  tasks:
+    - name: Check gateway health
+      aknochow.openshell.gateway_info:
+        gateway: "{{ gateway }}"
+        bearer_token: "{{ bearer_token }}"
+      register: gw_info
+
+    - name: Verify gateway is healthy
+      ansible.builtin.assert:
+        that:
+          - gw_info.healthy
+          - gw_info.version != ""
+        fail_msg: "Gateway is not healthy: {{ gw_info.status }}"
+
+    - name: Create a sandbox
+      aknochow.openshell.sandbox:
+        gateway: "{{ gateway }}"
+        image: "{{ sandbox_image }}"
+        bearer_token: "{{ bearer_token }}"
+        wait: true
+        wait_timeout: 300
+        state: present
+      register: sandbox
+
+    - name: Verify sandbox was created
+      ansible.builtin.assert:
+        that:
+          - sandbox.changed
+          - sandbox.sandbox.id != ""
+          - sandbox.sandbox.phase == "READY"
+
+    - name: Get sandbox info
+      aknochow.openshell.sandbox_info:
+        gateway: "{{ gateway }}"
+        name: "{{ sandbox.sandbox.name }}"
+        bearer_token: "{{ bearer_token }}"
+      register: info
+
+    - name: Verify sandbox info
+      ansible.builtin.assert:
+        that:
+          - info.sandboxes | length == 1
+          - info.sandboxes[0].name == sandbox.sandbox.name
+
+    - name: Execute a command in the sandbox
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gateway }}"
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command:
+          - echo
+          - hello from sandbox
+        bearer_token: "{{ bearer_token }}"
+      register: exec_result
+
+    - name: Verify command output
+      ansible.builtin.assert:
+        that:
+          - exec_result.rc == 0
+          - "'hello from sandbox' in exec_result.stdout"
+
+    - name: Execute a failing command
+      aknochow.openshell.sandbox_exec:
+        gateway: "{{ gateway }}"
+        sandbox: "{{ sandbox.sandbox.id }}"
+        command:
+          - /bin/sh
+          - -c
+          - "exit 42"
+        bearer_token: "{{ bearer_token }}"
+      register: fail_result
+
+    - name: Verify non-zero exit code
+      ansible.builtin.assert:
+        that:
+          - fail_result.rc == 42
+
+    - name: Create sandbox again (idempotent)
+      aknochow.openshell.sandbox:
+        gateway: "{{ gateway }}"
+        name: "{{ sandbox.sandbox.name }}"
+        image: "{{ sandbox_image }}"
+        bearer_token: "{{ bearer_token }}"
+        state: present
+      register: sandbox_again
+
+    - name: Verify idempotent create
+      ansible.builtin.assert:
+        that:
+          - not sandbox_again.changed
+
+    - name: Delete the sandbox
+      aknochow.openshell.sandbox:
+        gateway: "{{ gateway }}"
+        name: "{{ sandbox.sandbox.name }}"
+        bearer_token: "{{ bearer_token }}"
+        state: absent
+      register: delete_result
+
+    - name: Verify sandbox was deleted
+      ansible.builtin.assert:
+        that:
+          - delete_result.changed
+
+    - name: Delete again (idempotent)
+      aknochow.openshell.sandbox:
+        gateway: "{{ gateway }}"
+        name: "{{ sandbox.sandbox.name }}"
+        bearer_token: "{{ bearer_token }}"
+        state: absent
+      register: delete_again
+
+    - name: Verify idempotent delete
+      ansible.builtin.assert:
+        that:
+          - not delete_again.changed

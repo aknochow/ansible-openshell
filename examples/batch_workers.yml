@@ -1,0 +1,71 @@
+---
+# Example: Batch job execution across parallel sandboxes.
+#
+# Spins up N worker sandboxes, dispatches a job to each one
+# concurrently using Ansible's async, waits for all to finish,
+# collects results, and tears everything down.
+#
+# Usage:
+#   ansible-playbook examples/batch_workers.yml -e worker_count=3
+#
+# Auth via environment variables:
+#   export OPENSHELL_GATEWAY_URL=https://openshell.apps.example.com
+#   export OPENSHELL_TLS_CERT=/certs/tls.crt
+#   export OPENSHELL_TLS_KEY=/certs/tls.key
+#   export OPENSHELL_TLS_CA=/certs/ca.crt
+
+- name: Parallel sandbox batch jobs
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    sandbox_image: "ghcr.io/nvidia/openshell-community/sandboxes/base:latest"
+    worker_count: 3
+
+  tasks:
+    - name: Create worker sandboxes
+      aknochow.openshell.sandbox:
+        name: "worker-{{ item }}"
+        image: "{{ sandbox_image }}"
+        state: present
+      loop: "{{ range(1, worker_count | int + 1) | list }}"
+      register: workers
+
+    - name: Dispatch jobs (async)
+      aknochow.openshell.sandbox_exec:
+        sandbox: "{{ item.sandbox.id }}"
+        command:
+          - /bin/sh
+          - -c
+          - "echo 'Worker {{ idx + 1 }} processing...'; sleep 2; echo 'Worker {{ idx + 1 }} done: result={{ 100 + idx }}'"
+        command_timeout: 60
+      loop: "{{ workers.results }}"
+      loop_control:
+        index_var: idx
+      async: 300
+      poll: 0
+      register: jobs
+
+    - name: Wait for all jobs
+      ansible.builtin.async_status:
+        jid: "{{ item.ansible_job_id }}"
+      loop: "{{ jobs.results }}"
+      register: results
+      until: results.finished
+      retries: 60
+      delay: 3
+
+    - name: Collect results
+      ansible.builtin.debug:
+        msg: "{{ item.stdout_lines | default(['(no output)']) }}"
+      loop: "{{ results.results }}"
+      loop_control:
+        label: "worker-{{ idx + 1 }}"
+        index_var: idx
+
+    - name: Tear down all workers
+      aknochow.openshell.sandbox:
+        name: "worker-{{ item }}"
+        state: absent
+      loop: "{{ range(1, worker_count | int + 1) | list }}"
