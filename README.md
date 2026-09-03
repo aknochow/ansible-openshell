@@ -278,3 +278,8 @@ module, including idempotency and error-path assertions).
 
 - **Modules** (`plugins/modules/`): GNU General Public License v3.0+ (`GPL-3.0-or-later`)
 - **Module Utilities, Plugins, Tests & Documentation**: Apache License 2.0 (`Apache-2.0`)
+
+Every source file carries an `SPDX-License-Identifier` header stating which
+applies. Full license texts are in [`LICENSES/`](LICENSES/); the repository's
+headline `LICENSE` is GPL-3.0-or-later, the effective license of the collection
+as distributed (Apache-2.0 is compatible with GPL-3.0).
