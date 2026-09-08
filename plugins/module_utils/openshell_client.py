@@ -10,9 +10,21 @@ from ansible.module_utils.basic import AnsibleModule, env_fallback
 from .tls import build_tls_config
 
 GATEWAY_ARGSPEC = dict(
+    # NOT required. The CLI resolves the gateway from its own stored
+    # metadata -- `openshell status` prints an endpoint without being
+    # told one -- and a collection that cannot do the same forces every
+    # caller to hardcode an address. That is not hypothetical: plaibook's
+    # review.yml hardcoded `https://host.openshell.internal:17670`, which
+    # is the name openshell provisions INSIDE a sandbox (measured:
+    # resolves to 192.168.127.254 there, resolves nowhere on the host).
+    # The module runs on the controller, so it was a container-side
+    # address used from the host, and it failed with a DNS error that
+    # looked like a gateway outage.
+    #
+    # Resolution order, explicit beats ambient: param -> env -> the
+    # active gateway's stored metadata. See resolve_gateway().
     gateway=dict(
         type="str",
-        required=True,
         fallback=(env_fallback, ["OPENSHELL_GATEWAY_URL"]),
     ),
     tls_cert=dict(
@@ -113,6 +125,67 @@ def get_or_none(client: Any, name: str, workspace: str, module: AnsibleModule) -
         return None
 
 
+CONFIG_DIR_ENV = "OPENSHELL_CONFIG_DIR"
+DEFAULT_CONFIG_DIR = "~/.config/openshell"
+
+
+def _config_dir() -> "pathlib.Path":
+    import os
+    import pathlib
+
+    return pathlib.Path(
+        os.environ.get(CONFIG_DIR_ENV) or DEFAULT_CONFIG_DIR
+    ).expanduser()
+
+
+def stored_gateway_endpoint(name: str | None = None) -> str | None:
+    """The endpoint the openshell CLI itself would use, or None.
+
+    Reads the same on-disk state the CLI does: `active_gateway` names the
+    selected gateway, and `gateways/<name>/metadata.json` carries its
+    `gateway_endpoint`. Returns None -- never raises -- when openshell is
+    not configured on this machine, so the caller can produce a useful
+    error instead of a traceback.
+    """
+    import json
+
+    root = _config_dir()
+    try:
+        if not name:
+            import os
+
+            name = os.environ.get("OPENSHELL_GATEWAY") or (
+                (root / "active_gateway").read_text().strip()
+            )
+        if not name:
+            return None
+        meta = json.loads((root / "gateways" / name / "metadata.json").read_text())
+    except (OSError, ValueError):
+        return None
+    endpoint = meta.get("gateway_endpoint")
+    return endpoint if isinstance(endpoint, str) and endpoint else None
+
+
+def resolve_gateway(module: AnsibleModule) -> str:
+    """param -> OPENSHELL_GATEWAY_URL -> stored metadata, or fail clearly."""
+    explicit = module.params.get("gateway")
+    if explicit:
+        return explicit
+
+    endpoint = stored_gateway_endpoint()
+    if endpoint:
+        return endpoint
+
+    module.fail_json(
+        msg=(
+            "No gateway given and none could be resolved. Pass `gateway:`, "
+            "set OPENSHELL_GATEWAY_URL, or select a gateway with "
+            "`openshell gateway add/use` so that "
+            f"{_config_dir()}/active_gateway and its metadata.json exist."
+        )
+    )
+
+
 def get_client(module: AnsibleModule) -> Any:
     """Create a SandboxClient from module params."""
     try:
@@ -123,7 +196,7 @@ def get_client(module: AnsibleModule) -> Any:
         )
         return
 
-    gateway_url = module.params["gateway"]
+    gateway_url = resolve_gateway(module)
     parsed = urlparse(gateway_url)
 
     host = parsed.hostname or gateway_url

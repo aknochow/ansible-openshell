@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -39,7 +40,10 @@ class TestGatewayArgspec:
         )
 
         assert "gateway" in GATEWAY_ARGSPEC
-        assert GATEWAY_ARGSPEC["gateway"]["required"] is True
+        # NOT required: the CLI resolves its gateway from stored metadata,
+        # and a collection that cannot do the same forces every caller to
+        # hardcode an address. See TestResolveGateway below.
+        assert GATEWAY_ARGSPEC["gateway"].get("required") in (None, False)
         assert "tls_cert" in GATEWAY_ARGSPEC
         assert "tls_key" in GATEWAY_ARGSPEC
         assert "tls_ca" in GATEWAY_ARGSPEC
@@ -274,3 +278,89 @@ class TestTlsBuilder:
 
         build_tls_config(module)
         module.fail_json.assert_called_once()
+
+
+class TestResolveGateway:
+    """`gateway` became optional, so the resolution order IS the contract.
+
+    param -> OPENSHELL_GATEWAY_URL -> the active gateway's metadata.json.
+    Explicit beats ambient at every step; failing with a message that names
+    all three routes beats failing with "required".
+    """
+
+    def _mod(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils import (
+            openshell_client as oc,
+        )
+
+        return oc
+
+    def _cfg(self, tmp_path, name="gw", endpoint="https://example.test:17670"):
+        import json
+
+        (tmp_path / "active_gateway").write_text(name + "\n")
+        d = tmp_path / "gateways" / name
+        d.mkdir(parents=True)
+        (d / "metadata.json").write_text(json.dumps({"gateway_endpoint": endpoint}))
+        return tmp_path
+
+    def test_stored_endpoint_is_read_from_the_active_gateway(
+        self, mock_openshell, tmp_path, monkeypatch
+    ):
+        oc = self._mod(mock_openshell)
+        monkeypatch.setenv(oc.CONFIG_DIR_ENV, str(self._cfg(tmp_path)))
+        monkeypatch.delenv("OPENSHELL_GATEWAY", raising=False)
+        assert oc.stored_gateway_endpoint() == "https://example.test:17670"
+
+    def test_an_unconfigured_machine_returns_none_rather_than_raising(
+        self, mock_openshell, tmp_path, monkeypatch
+    ):
+        # A traceback here would replace a useful "no gateway" message with
+        # a stack trace about a missing file.
+        oc = self._mod(mock_openshell)
+        monkeypatch.setenv(oc.CONFIG_DIR_ENV, str(tmp_path / "nothing-here"))
+        monkeypatch.delenv("OPENSHELL_GATEWAY", raising=False)
+        assert oc.stored_gateway_endpoint() is None
+
+    def test_the_explicit_param_wins_over_stored_metadata(
+        self, mock_openshell, tmp_path, monkeypatch
+    ):
+        oc = self._mod(mock_openshell)
+        monkeypatch.setenv(oc.CONFIG_DIR_ENV, str(self._cfg(tmp_path)))
+        module = types.SimpleNamespace(
+            params={"gateway": "https://explicit.test:1"},
+            fail_json=lambda **kw: (_ for _ in ()).throw(AssertionError(kw)),
+        )
+        assert oc.resolve_gateway(module) == "https://explicit.test:1"
+
+    def test_stored_metadata_is_used_when_no_param_is_given(
+        self, mock_openshell, tmp_path, monkeypatch
+    ):
+        oc = self._mod(mock_openshell)
+        monkeypatch.setenv(oc.CONFIG_DIR_ENV, str(self._cfg(tmp_path)))
+        monkeypatch.delenv("OPENSHELL_GATEWAY", raising=False)
+        module = types.SimpleNamespace(
+            params={"gateway": None},
+            fail_json=lambda **kw: (_ for _ in ()).throw(AssertionError(kw)),
+        )
+        assert oc.resolve_gateway(module) == "https://example.test:17670"
+
+    def test_nothing_resolvable_fails_naming_every_route(
+        self, mock_openshell, tmp_path, monkeypatch
+    ):
+        oc = self._mod(mock_openshell)
+        monkeypatch.setenv(oc.CONFIG_DIR_ENV, str(tmp_path / "nothing-here"))
+        monkeypatch.delenv("OPENSHELL_GATEWAY", raising=False)
+        seen = {}
+
+        def fail_json(**kw):
+            seen.update(kw)
+            raise SystemExit(kw.get("msg", ""))
+
+        module = types.SimpleNamespace(params={"gateway": None}, fail_json=fail_json)
+        with pytest.raises(SystemExit):
+            oc.resolve_gateway(module)
+        msg = seen["msg"]
+        assert "OPENSHELL_GATEWAY_URL" in msg
+        assert "gateway" in msg
+        assert "active_gateway" in msg
