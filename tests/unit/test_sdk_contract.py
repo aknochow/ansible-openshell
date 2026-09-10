@@ -10,9 +10,14 @@ TypeError: missing 1 required keyword-only argument: 'workspace'.
 from __future__ import annotations
 
 import inspect
+from importlib.metadata import version
 
+from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+    OPENSHELL_SDK_SPEC,
+)
 from openshell import SandboxClient
 from openshell._proto import datamodel_pb2, openshell_pb2, sandbox_pb2
+from packaging.version import Version
 
 
 def test_create_get_delete_list_wait_require_workspace_kwarg():
@@ -49,14 +54,6 @@ def test_proto_types_used_by_modules_still_exist():
 
 
 def test_collection_pin_matches_installed_sdk():
-    from importlib.metadata import version
-
-    from packaging.version import Version
-
-    from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
-        OPENSHELL_SDK_SPEC,
-    )
-
     installed = Version(version("openshell"))
     assert OPENSHELL_SDK_SPEC == "openshell>=0.0.116,<0.0.120"
     assert installed >= Version("0.0.116")
