@@ -8,6 +8,6 @@ on:
 
 jobs:
   collection-ci:
-    uses: aknochow/ansible-claude/.github/workflows/collection-ci.yml@main
+    uses: aknochow/ansible-plaibook/.github/workflows/collection-ci.yml@main
     with:
       collection_name: openshell
