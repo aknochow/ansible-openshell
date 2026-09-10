@@ -1,0 +1,17 @@
+---
+profile: min
+
+mock_modules:
+  - aknochow.openshell.gateway_info
+  - aknochow.openshell.provider
+  - aknochow.openshell.sandbox
+  - aknochow.openshell.sandbox_exec
+  - aknochow.openshell.sandbox_info
+  - aknochow.openshell.sandbox_upload
+
+warn_list:
+  - ignore-errors
+
+exclude_paths:
+  - .venv/
+  - tests/
