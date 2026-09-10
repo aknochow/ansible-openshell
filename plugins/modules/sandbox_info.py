@@ -23,7 +23,7 @@ options:
 extends_documentation_fragment:
   - aknochow.openshell.auth
 requirements:
-  - "openshell >= 0.0.70"
+  - "openshell >= 0.0.116, < 0.0.120"
   - "python >= 3.12"
 """
 

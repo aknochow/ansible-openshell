@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 license = "Apache-2.0"
 dependencies = [
     "ansible-core>=2.16.0,<2.19.0",
-    "openshell>=0.0.70,<0.0.91",
+    "openshell>=0.0.116,<0.0.120",
     "grpcio>=1.60",
     "protobuf>=4.25",
 ]

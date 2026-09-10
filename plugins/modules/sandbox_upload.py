@@ -41,7 +41,7 @@ options:
 extends_documentation_fragment:
   - aknochow.openshell.auth
 requirements:
-  - "openshell >= 0.0.70"
+  - "openshell >= 0.0.116, < 0.0.120"
   - "python >= 3.12"
 """
 
@@ -74,6 +74,7 @@ from typing import Any
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
+    OPENSHELL_SDK_SPEC,
     get_client,
     get_or_none,
     get_workspace,
@@ -192,7 +193,9 @@ def main() -> None:
     try:
         from openshell import SandboxError
     except ImportError:
-        module.fail_json(msg="The openshell Python SDK is required. Install it with: pip install 'openshell>=0.0.70'")
+        module.fail_json(
+            msg="The openshell Python SDK is required. Install it with: pip install '%s'" % OPENSHELL_SDK_SPEC
+        )
         return
 
     try:

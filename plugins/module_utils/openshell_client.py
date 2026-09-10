@@ -9,6 +9,13 @@ from ansible.module_utils.basic import AnsibleModule, env_fallback
 
 from .tls import build_tls_config
 
+# Bounded range, not a floating latest. 0.0.116 is current PyPI stable
+# (2026-08-28); <0.0.120 leaves a little headroom without repeating the
+# pre-0.0.91 mistake of tracking NVIDIA's 0.0.x line unbounded across an
+# API break. SandboxClient.create/get/delete/list/wait_* took a required
+# workspace= kwarg starting in 0.0.88; this collection now always passes it.
+OPENSHELL_SDK_SPEC = "openshell>=0.0.116,<0.0.120"
+
 GATEWAY_ARGSPEC = dict(
     gateway=dict(
         type="str",
@@ -40,10 +47,9 @@ GATEWAY_ARGSPEC = dict(
     ),
     # openshell>=0.0.88 scopes nearly every SandboxClient call to a
     # workspace (required keyword-only arg on create/get/delete/list/
-    # wait_ready/wait_deleted/etc). Gateways that don't implement
-    # workspace support yet (WorkspaceClient RPCs return UNIMPLEMENTED)
-    # still accept and round-trip an empty string, so "" is a safe
-    # default rather than guessing a "default" sentinel.
+    # wait_ready/wait_deleted/etc). An empty string is still valid: the
+    # SDK accepts it, and current gateways map empty to the "default"
+    # workspace rather than requiring callers to guess a sentinel.
     workspace=dict(
         type="str",
         default="",
@@ -52,6 +58,8 @@ GATEWAY_ARGSPEC = dict(
 )
 
 
+# Numeric values match openshell.v1.SandboxPhase in the 0.0.116 proto.
+# STOPPING/STOPPED/STARTING landed after 0.0.90 (sandbox start/stop).
 PHASE_NAMES = {
     0: "UNSPECIFIED",
     1: "PROVISIONING",
@@ -59,6 +67,9 @@ PHASE_NAMES = {
     3: "ERROR",
     4: "DELETING",
     5: "UNKNOWN",
+    6: "STOPPING",
+    7: "STOPPED",
+    8: "STARTING",
 }
 
 
@@ -119,7 +130,7 @@ def get_client(module: AnsibleModule) -> Any:
         from openshell import SandboxClient
     except ImportError:
         module.fail_json(
-            msg="The openshell Python SDK is required. Install it with: pip install 'openshell>=0.0.70'"
+            msg="The openshell Python SDK is required. Install it with: pip install '%s'" % OPENSHELL_SDK_SPEC
         )
         return
 

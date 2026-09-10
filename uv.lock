@@ -40,7 +40,7 @@ dev = [
 requires-dist = [
     { name = "ansible-core", specifier = ">=2.16.0,<2.19.0" },
     { name = "grpcio", specifier = ">=1.60" },
-    { name = "openshell", specifier = ">=0.0.70,<0.0.91" },
+    { name = "openshell", specifier = ">=0.0.116,<0.0.120" },
     { name = "protobuf", specifier = ">=4.25" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<10.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0,<7.0.0" },
@@ -555,7 +555,7 @@ wheels = [
 
 [[package]]
 name = "openshell"
-version = "0.0.90"
+version = "0.0.116"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "cloudpickle" },
@@ -564,9 +564,7 @@ dependencies = [
     { name = "protobuf" },
 ]
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3c/b8/9c37e25ac5560dd46087eb62a3ae9398dc860abe0bd982729ec88844069c/openshell-0.0.90-py3-none-macosx_13_0_arm64.whl", hash = "sha256:2a2834d83d40904928ba4107598f1052a514007018b2ff1f3b5d09bbee7a96ce", size = 8412743, upload-time = "2026-07-23T15:17:58.697Z" },
-    { url = "https://files.pythonhosted.org/packages/8a/f7/75a2ac55d60a3077c0bc051daea68d006d988218b2cb684ad19a9e43161d/openshell-0.0.90-py3-none-manylinux_2_39_aarch64.whl", hash = "sha256:4de9809c7e6e2df1ffe43ef0b15dd7522cbf72e0a8f3c67f784569e599bedae2", size = 8500323, upload-time = "2026-07-23T15:18:21.668Z" },
-    { url = "https://files.pythonhosted.org/packages/d9/eb/2b0e6eadac85d8197c18d3b4560e1d048e55429ae2769975c3b0a76a689c/openshell-0.0.90-py3-none-manylinux_2_39_x86_64.whl", hash = "sha256:cf014b2b0fd7628ba6d6560a343bbb21ab4d6223a207b7e357e608c9599e19e2", size = 8950750, upload-time = "2026-07-23T15:18:42.082Z" },
+    { url = "https://files.pythonhosted.org/packages/4d/53/f20551c4ae45e072215832362b73951abd17473ca20d56d8b7c0c7d58fdd/openshell-0.0.116-py3-none-any.whl", hash = "sha256:5a31eb4e38d7b5d746956404145b7335557f9060ac7a987c65ea5af4d708b3fc", size = 110131, upload-time = "2026-08-28T09:10:50.719Z" },
 ]
 
 [[package]]
