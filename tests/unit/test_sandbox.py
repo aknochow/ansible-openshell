@@ -42,6 +42,9 @@ class TestSandboxModule:
         assert PHASE_NAMES[0] == "UNSPECIFIED"
         assert PHASE_NAMES[2] == "READY"
         assert PHASE_NAMES[3] == "ERROR"
+        assert PHASE_NAMES[6] == "STOPPING"
+        assert PHASE_NAMES[7] == "STOPPED"
+        assert PHASE_NAMES[8] == "STARTING"
 
     def test_sandbox_to_dict(self, mock_openshell):
         from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
@@ -61,6 +64,22 @@ class TestSandboxModule:
         assert result["workspace"] == "test-workspace"
         assert result["phase"] == "READY"
         assert result["policy_version"] == 1
+
+    def test_sandbox_to_dict_maps_stopped_phase(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            sandbox_to_dict,
+        )
+
+        ref = MagicMock()
+        ref.id = "sandbox-stopped"
+        ref.name = "stopped-sandbox"
+        ref.workspace = "default"
+        ref.status.phase = 7
+        ref.status.current_policy_version = 2
+
+        result = sandbox_to_dict(ref)
+        assert result["phase"] == "STOPPED"
+        assert result["workspace"] == "default"
 
     def test_create_requires_image(self, mock_openshell):
         from ansible_collections.aknochow.openshell.plugins.modules.sandbox import (

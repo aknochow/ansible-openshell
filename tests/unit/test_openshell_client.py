@@ -45,6 +45,8 @@ class TestGatewayArgspec:
         assert "tls_ca" in GATEWAY_ARGSPEC
         assert "bearer_token" in GATEWAY_ARGSPEC
         assert "timeout" in GATEWAY_ARGSPEC
+        assert "workspace" in GATEWAY_ARGSPEC
+        assert GATEWAY_ARGSPEC["workspace"]["default"] == ""
 
     def test_tls_key_is_no_log(self, mock_openshell):
         from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
@@ -60,6 +62,36 @@ class TestGatewayArgspec:
         )
 
         assert GATEWAY_ARGSPEC["timeout"]["default"] == 30.0
+
+
+class TestOpenshellSdkSpec:
+    def test_pin_is_bounded(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            OPENSHELL_SDK_SPEC,
+        )
+
+        assert OPENSHELL_SDK_SPEC.startswith("openshell>=")
+        assert ",<" in OPENSHELL_SDK_SPEC.replace(" ", "") or "<" in OPENSHELL_SDK_SPEC
+
+
+class TestGetWorkspace:
+    def test_empty_string_when_missing(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            get_workspace,
+        )
+
+        module = MagicMock()
+        module.params = {"workspace": None}
+        assert get_workspace(module) == ""
+
+    def test_passes_through_explicit_workspace(self, mock_openshell):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            get_workspace,
+        )
+
+        module = MagicMock()
+        module.params = {"workspace": "team-a"}
+        assert get_workspace(module) == "team-a"
 
 
 class TestGetClient:

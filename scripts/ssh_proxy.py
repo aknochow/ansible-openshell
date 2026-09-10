@@ -141,8 +141,8 @@ def main():
         "--workspace",
         default="",
         help=(
-            "Workspace the sandbox belongs to (openshell>=0.0.88; "
-            "empty string works against gateways without workspace support)"
+            "Workspace the sandbox belongs to (required by openshell>=0.0.88; "
+            "empty string maps to the gateway's default workspace)"
         ),
     )
     parser.add_argument("--timeout", type=float, default=30.0)
