@@ -44,9 +44,10 @@ options:
   workspace:
     description:
       - Workspace to scope sandbox operations to.
-      - Gateways that don't implement workspace support yet accept and
-        round-trip an empty string, so the default is safe even against
-        those.
+      - Required keyword argument on the OpenShell Python SDK since 0.0.88
+        (C(SandboxClient.create)/C(get)/C(delete)/C(list)/C(wait_ready)/etc).
+      - An empty string is accepted; current gateways map it to the
+        C(default) workspace.
       - If the value is not specified, the value of the E(OPENSHELL_WORKSPACE) environment variable will be used.
     type: str
     default: ""

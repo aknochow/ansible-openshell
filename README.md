@@ -15,19 +15,20 @@ the other.
 ## Requirements
 
 ```
-pip install 'openshell>=0.0.70,<0.0.91'
+pip install 'openshell>=0.0.116,<0.0.120'
 ```
 
-**Version pin matters.** The `openshell` SDK introduced a breaking
-change around v0.0.9x: `SandboxClient.get()`/`.create()` gained a
-required `workspace` keyword argument that this collection's modules do
-not yet pass. Installing an unpinned/latest SDK will break `sandbox`,
-`sandbox_info`, and `sandbox_exec` with
-`TypeError: missing 1 required keyword-only argument: 'workspace'`.
-This is a known gap (see [Known gaps](#known-gaps)), not yet fixed.
+**Version pin matters.** NVIDIA's `openshell` 0.0.x line still ships
+breaking Python API changes in patch releases. `SandboxClient.get()` /
+`.create()` / `.delete()` / `.list()` / `.wait_ready()` require a
+`workspace` keyword argument since 0.0.88; this collection always
+passes it (module option `workspace`, env `OPENSHELL_WORKSPACE`,
+default `""` which current gateways map to the `default` workspace).
+Stay inside the bounded range above — do not install an unpinned
+latest. Current PyPI stable as of this pin is 0.0.116.
 
-- Python ≥ 3.12 (matches the `openshell` SDK's own floor)
-- `ansible-core` ≥ 2.17
+- Python ≥ 3.11 (matches the `openshell` SDK's own floor)
+- `ansible-core` ≥ 2.16 (`< 2.19`, see `pyproject.toml`)
 
 ## Modules
 
@@ -247,8 +248,10 @@ development — the fix is in `stdin_reader()`.
 ## Known gaps
 
 - **SDK version pin required** (see [Requirements](#requirements)) —
-  `sandbox`/`sandbox_info`/`sandbox_exec` don't yet pass the
-  `workspace` kwarg that `openshell>=0.0.9x` requires.
+  stay on `openshell>=0.0.116,<0.0.120`. The 0.0.x line has already
+  broken the Python API once (the `workspace` kwarg at 0.0.88/0.0.9x);
+  this collection now passes `workspace`, but a future 0.0.12x change
+  could still shift method signatures or proto layout.
 - **`provider` module uses raw gRPC stubs**, not the official SDK — the
   SDK doesn't wrap Provider CRUD RPCs at all (confirmed by inspecting
   the SDK source; only `SandboxClient`'s documented methods are
@@ -259,12 +262,17 @@ development — the fix is in `stdin_reader()`.
   `aknochow.openshell.sandbox` connection plugin would remove the need
   to hand-construct `ansible_ssh_common_args`, but wasn't built this
   round.
+- **Sandbox start/stop is not a module state** — SDK 0.0.116 added
+  `SandboxClient.start()` / `.stop()` / `.wait_stopped()` and proto
+  phases STOPPING/STOPPED/STARTING. `sandbox` still only implements
+  `present`/`absent`; those new phases are mapped in returned
+  `phase` strings.
 
 ## Testing
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install ansible-core 'openshell>=0.0.70,<0.0.91'
+pip install ansible-core 'openshell>=0.0.116,<0.0.120'
 ansible-galaxy collection install . --force
 python -m pytest tests/unit/
 ```
