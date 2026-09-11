@@ -20,6 +20,12 @@ the other.
 pip install 'openshell>=0.0.116,<0.0.120'
 ```
 
+Install the collection itself from Galaxy (`ansible-galaxy collection install
+aknochow.openshell`) or, in a venv, as a pip wheel that lands on Ansible's
+`ansible_collections` sys.path (`pip install .` from this checkout). The PyPI
+name is `aknochow-openshell`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+wheel layout and a two-collection smoke test.
+
 **Version pin matters.** NVIDIA's `openshell` 0.0.x line still ships
 breaking Python API changes in patch releases. `SandboxClient.get()` /
 `.create()` / `.delete()` / `.list()` / `.wait_ready()` require a

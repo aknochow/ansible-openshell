@@ -8,6 +8,38 @@ resolution-markers = [
 ]
 
 [[package]]
+name = "aknochow-openshell"
+version = "0.1.0"
+source = { editable = "." }
+dependencies = [
+    { name = "ansible-core" },
+    { name = "grpcio" },
+    { name = "openshell" },
+    { name = "protobuf" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "ansible-lint" },
+    { name = "pytest" },
+    { name = "pytest-cov" },
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "ansible-core", specifier = ">=2.16.0,<2.19.0" },
+    { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=24.0.0" },
+    { name = "grpcio", specifier = ">=1.60" },
+    { name = "openshell", specifier = ">=0.0.116,<0.0.120" },
+    { name = "protobuf", specifier = ">=4.25" },
+    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<10.0.0" },
+    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0,<7.0.0" },
+    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
+]
+provides-extras = ["dev"]
+
+[[package]]
 name = "ansible-compat"
 version = "26.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -66,38 +98,6 @@ sdist = { url = "https://files.pythonhosted.org/packages/79/17/23a03a6595a424450
 wheels = [
     { url = "https://files.pythonhosted.org/packages/69/27/c9707a6165683c85ff67cb8e5efa5238ecf26dac0626955971ef02108e84/ansible_lint-26.8.0-py3-none-any.whl", hash = "sha256:94e58501cc7fafaa505dd9daea3bddb4affa6e8efe8217323c06d7194a312f57", size = 334972, upload-time = "2026-08-12T07:23:02.284Z" },
 ]
-
-[[package]]
-name = "ansible-openshell"
-version = "0.1.0"
-source = { editable = "." }
-dependencies = [
-    { name = "ansible-core" },
-    { name = "grpcio" },
-    { name = "openshell" },
-    { name = "protobuf" },
-]
-
-[package.optional-dependencies]
-dev = [
-    { name = "ansible-lint" },
-    { name = "pytest" },
-    { name = "pytest-cov" },
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "ansible-core", specifier = ">=2.16.0,<2.19.0" },
-    { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=24.0.0" },
-    { name = "grpcio", specifier = ">=1.60" },
-    { name = "openshell", specifier = ">=0.0.116,<0.0.120" },
-    { name = "protobuf", specifier = ">=4.25" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0.0,<10.0.0" },
-    { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0,<7.0.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.9.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "anyio"

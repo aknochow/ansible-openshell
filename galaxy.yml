@@ -29,4 +29,7 @@ build_ignore:
   - .yamllint
   - __pycache__
   - "*.egg-info"
+  - build
+  - dist
+  - hatch_build.py
   - tests
