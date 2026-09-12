@@ -1,5 +1,7 @@
 # aknochow.openshell
 
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/aknochow/ansible-openshell/badge)](https://scorecard.dev/viewer/?uri=github.com/aknochow/ansible-openshell)
+
 Ansible collection for managing [OpenShell](https://github.com/NVIDIA/OpenShell)
 sandboxes — a gRPC-mediated, policy-enforced sandbox platform for running
 untrusted or agentic workloads in isolation. This collection is a thin,
