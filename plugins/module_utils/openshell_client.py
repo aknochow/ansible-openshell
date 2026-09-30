@@ -73,6 +73,32 @@ PHASE_NAMES = {
 }
 
 
+def exec_command(
+    client: Any,
+    sandbox_name: str,
+    command: list,
+    *,
+    workspace: str,
+    sandbox_id: str,
+    **kwargs: Any,
+) -> Any:
+    """Run a command in a sandbox on either SDK line this collection meets.
+
+    openshell 0.1 ``SandboxClient.exec`` requires keyword-only ``workspace``
+    and addresses the sandbox by name. 0.0.116 addresses it by id and
+    rejects ``workspace``. Callers pass both identities.
+    """
+    import inspect
+
+    try:
+        parameters = inspect.signature(client.exec).parameters
+    except (TypeError, ValueError):
+        parameters = {}
+    if "workspace" in parameters:
+        return client.exec(sandbox_name, command, workspace=workspace, **kwargs)
+    return client.exec(sandbox_id, command, **kwargs)
+
+
 def sandbox_to_dict(ref: Any) -> dict:
     """Shared by sandbox.py and sandbox_info.py — same SandboxRef shape."""
     return dict(
