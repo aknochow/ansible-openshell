@@ -179,7 +179,9 @@ def main():
             "empty string maps to the gateway's default workspace)"
         ),
     )
-    parser.add_argument("--timeout", type=float, default=30.0)
+    # ForwardTcp is one stream for the whole SSH session. 30s matches the
+    # SDK's per-call default and cuts off the first sandbox command.
+    parser.add_argument("--timeout", type=float, default=900.0)
     args = parser.parse_args()
     if args.bearer_token_file:
         try:
@@ -212,7 +214,7 @@ def main():
         session_request, init = ssh_forward_messages(
             openshell_pb2, args.sandbox, sandbox.id, args.workspace
         )
-        session = stub.CreateSshSession(session_request)
+        session = stub.CreateSshSession(session_request, timeout=args.timeout)
         init.authorization_token = session.token
 
         init_frame = openshell_pb2.TcpForwardFrame(init=init)
@@ -224,7 +226,8 @@ def main():
         reader.start()
 
         response_iterator = stub.ForwardTcp(
-            frame_generator(out_queue, openshell_pb2.TcpForwardFrame)
+            frame_generator(out_queue, openshell_pb2.TcpForwardFrame),
+            timeout=args.timeout,
         )
 
         stdout = sys.stdout.buffer
