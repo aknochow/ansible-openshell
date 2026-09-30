@@ -116,6 +116,40 @@ def frame_generator(in_queue: "queue.Queue", frame_cls):
             yield item  # already a TcpForwardFrame (the init frame)
 
 
+def ssh_forward_messages(openshell_pb2, sandbox_name: str, sandbox_id: str, workspace: str):
+    """Build CreateSshSession and TcpForwardInit for the installed SDK.
+
+    openshell 0.0.116 addresses the session by sandbox id. 0.1 addresses it
+    by name and requires a workspace scope. The token is filled in after
+    CreateSshSession returns.
+    """
+    session_fields = openshell_pb2.CreateSshSessionRequest.DESCRIPTOR.fields_by_name
+    if "workspace_scope" in session_fields:
+        if not workspace:
+            sys.exit("ssh_proxy: --workspace is required")
+        from openshell._proto import datamodel_pb2
+
+        session = openshell_pb2.CreateSshSessionRequest(
+            sandbox=sandbox_name,
+            workspace_scope=datamodel_pb2.WorkspaceSelector(workspace=workspace),
+        )
+        init = openshell_pb2.TcpForwardInit(
+            sandbox=sandbox_name,
+            workspace=workspace,
+            service_id=f"ssh-proxy:{sandbox_name}",
+            ssh=openshell_pb2.SshRelayTarget(),
+        )
+        return session, init
+
+    session = openshell_pb2.CreateSshSessionRequest(sandbox_id=sandbox_id)
+    init = openshell_pb2.TcpForwardInit(
+        sandbox_id=sandbox_id,
+        service_id=f"ssh-proxy:{sandbox_id}",
+        ssh=openshell_pb2.SshRelayTarget(),
+    )
+    return session, init
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--gateway", required=True, help="Gateway URL, e.g. https://openshell.apps.example.com")
@@ -173,23 +207,15 @@ def main():
         # SandboxClient has no public wrapper for CreateSshSession/ForwardTcp
         # (unlike CreateSandbox, which client.create() covers) — reaching
         # into client._channel is the only way to reach these RPCs today.
-        # Known limitation, not fixable without an SDK change; pin the
-        # openshell version constraint in setup.py/galaxy.yml if this ever
-        # needs to track a channel-shape change upstream.
         stub = openshell_pb2_grpc.OpenShellStub(client._channel)
 
-        session = stub.CreateSshSession(
-            openshell_pb2.CreateSshSessionRequest(sandbox_id=sandbox.id)
+        session_request, init = ssh_forward_messages(
+            openshell_pb2, args.sandbox, sandbox.id, args.workspace
         )
+        session = stub.CreateSshSession(session_request)
+        init.authorization_token = session.token
 
-        init_frame = openshell_pb2.TcpForwardFrame(
-            init=openshell_pb2.TcpForwardInit(
-                sandbox_id=sandbox.id,
-                service_id=f"ssh-proxy:{sandbox.id}",
-                ssh=openshell_pb2.SshRelayTarget(),
-                authorization_token=session.token,
-            )
-        )
+        init_frame = openshell_pb2.TcpForwardFrame(init=init)
 
         out_queue: "queue.Queue" = queue.Queue()
         reader = threading.Thread(
