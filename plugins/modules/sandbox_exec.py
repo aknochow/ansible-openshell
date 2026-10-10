@@ -101,6 +101,7 @@ stderr:
 from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
+    exec_command,
     get_client,
     get_or_none,
     get_workspace,
@@ -137,18 +138,22 @@ def main():
         workspace = get_workspace(module)
 
         try:
-            # exec() takes a globally-unique sandbox_id and has no workspace
-            # kwarg — only get() is workspace-scoped, since names (unlike
-            # IDs) are only unique within a workspace. Resolve `sandbox`
-            # (name or ID, per this module's docs) through get_or_none()
-            # first; a confirmed-absent lookup means `sandbox` was already
-            # an ID (get_or_none only resolves names), so fall back to it
-            # as-is — exec() itself will raise loudly if it's neither.
+            # 0.0.116 exec() is id-scoped. 0.1 exec() is name-scoped and
+            # requires workspace. Resolve a name through get_or_none(); a
+            # confirmed-absent lookup means `sandbox` was already an id.
             ref = get_or_none(client, sandbox_name, workspace, module)
-            sandbox_id = ref.id if ref is not None else sandbox_name
-            result = client.exec(
-                sandbox_id,
+            if ref is not None:
+                resolved_name = ref.name
+                sandbox_id = ref.id
+            else:
+                resolved_name = sandbox_name
+                sandbox_id = sandbox_name
+            result = exec_command(
+                client,
+                resolved_name,
                 command,
+                workspace=workspace,
+                sandbox_id=sandbox_id,
                 workdir=workdir,
                 env=env,
                 stdin=stdin_data.encode() if stdin_data else None,

@@ -75,6 +75,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
     GATEWAY_ARGSPEC,
     OPENSHELL_SDK_SPEC,
+    exec_command,
     get_client,
     get_or_none,
     get_workspace,
@@ -166,10 +167,22 @@ def reject_escaping_members(tarinfo: tarfile.TarInfo, real_src: str) -> tarfile.
 
 
 def exec_or_fail(
-    client: Any, sandbox_id: str, module: AnsibleModule, argv: list[str], stdin: bytes | None = None
+    client: Any,
+    sandbox: Any,
+    module: AnsibleModule,
+    argv: list[str],
+    workspace: str,
+    stdin: bytes | None = None,
 ) -> Any:
     """Run a command in the sandbox, calling module.fail_json on non-zero exit."""
-    result = client.exec(sandbox_id, argv, stdin=stdin)
+    result = exec_command(
+        client,
+        sandbox.name,
+        argv,
+        workspace=workspace,
+        sandbox_id=sandbox.id,
+        stdin=stdin,
+    )
     if result.exit_code != 0:
         module.fail_json(
             msg="command %s failed (rc=%d): %s" % (argv, result.exit_code, result.stderr)
@@ -260,7 +273,11 @@ def main() -> None:
         # plain `cat >>` redirect is vulnerable to a symlink race if
         # something else in the sandbox can predict/pre-create it.
         mktemp_result = exec_or_fail(
-            client, sandbox.id, module, ["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"]
+            client,
+            sandbox,
+            module,
+            ["mktemp", "/tmp/.ansible-openshell-upload-XXXXXXXX.tar.gz"],
+            workspace,
         )
         remote_tmp = mktemp_result.stdout.strip()
         tmp_suffix = remote_tmp[len("/tmp/.ansible-openshell-upload-") :]
@@ -274,22 +291,29 @@ def main() -> None:
             module.fail_json(msg="mktemp returned an unexpected path: %r" % remote_tmp)
 
         try:
-            exec_or_fail(client, sandbox.id, module, ["mkdir", "-p", dest])
+            exec_or_fail(client, sandbox, module, ["mkdir", "-p", dest], workspace)
             for offset in range(0, len(tar_bytes), CHUNK_SIZE):
                 exec_or_fail(
                     client,
-                    sandbox.id,
+                    sandbox,
                     module,
                     ["python3", "-c", _APPEND_NOFOLLOW_SCRIPT, remote_tmp],
+                    workspace,
                     stdin=tar_bytes[offset : offset + CHUNK_SIZE],
                 )
-            exec_or_fail(client, sandbox.id, module, ["tar", "xzf", remote_tmp, "-C", dest])
+            exec_or_fail(client, sandbox, module, ["tar", "xzf", remote_tmp, "-C", dest], workspace)
         finally:
             # Best-effort — if this fails too, the original error (if
             # any) from the block above is what module.fail_json already
             # raised; don't let a cleanup failure mask it.
             try:
-                client.exec(sandbox.id, ["rm", "-f", remote_tmp])
+                exec_command(
+                    client,
+                    sandbox.name,
+                    ["rm", "-f", remote_tmp],
+                    workspace=workspace,
+                    sandbox_id=sandbox.id,
+                )
             except Exception:
                 pass
 

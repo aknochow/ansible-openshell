@@ -306,3 +306,61 @@ class TestTlsBuilder:
 
         build_tls_config(module)
         module.fail_json.assert_called_once()
+
+
+class TestExecCommand:
+    def test_passes_workspace_and_name_on_openshell_0_1(self):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            exec_command,
+        )
+
+        seen = {}
+
+        def exec_fn(sandbox, command, *, workspace, stdin=None):
+            seen["sandbox"] = sandbox
+            seen["command"] = command
+            seen["workspace"] = workspace
+            seen["stdin"] = stdin
+            return "ok"
+
+        client = type("Client", (), {"exec": staticmethod(exec_fn)})()
+        result = exec_command(
+            client,
+            "meek-grison",
+            ["true"],
+            workspace="default",
+            sandbox_id="id-1",
+            stdin=b"x",
+        )
+        assert result == "ok"
+        assert seen == {
+            "sandbox": "meek-grison",
+            "command": ["true"],
+            "workspace": "default",
+            "stdin": b"x",
+        }
+
+    def test_uses_id_and_omits_workspace_on_openshell_0_0(self):
+        from ansible_collections.aknochow.openshell.plugins.module_utils.openshell_client import (
+            exec_command,
+        )
+
+        seen = {}
+
+        def exec_fn(sandbox_id, command, *, stdin=None):
+            seen["sandbox_id"] = sandbox_id
+            seen["command"] = command
+            seen["stdin"] = stdin
+            return "ok"
+
+        client = type("Client", (), {"exec": staticmethod(exec_fn)})()
+        result = exec_command(
+            client,
+            "meek-grison",
+            ["true"],
+            workspace="default",
+            sandbox_id="id-1",
+            stdin=None,
+        )
+        assert result == "ok"
+        assert seen == {"sandbox_id": "id-1", "command": ["true"], "stdin": None}
