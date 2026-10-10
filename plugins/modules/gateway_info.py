@@ -17,7 +17,7 @@ author:
 extends_documentation_fragment:
   - aknochow.openshell.auth
 requirements:
-  - "openshell >= 0.0.116, < 0.0.120"
+  - "openshell >= 0.1.3, < 0.2"
   - "python >= 3.12"
 """
 

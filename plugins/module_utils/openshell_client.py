@@ -9,12 +9,13 @@ from ansible.module_utils.basic import AnsibleModule, env_fallback
 
 from .tls import build_tls_config
 
-# Bounded range, not a floating latest. 0.0.116 is current PyPI stable
-# (2026-08-28); <0.0.120 leaves a little headroom without repeating the
-# pre-0.0.91 mistake of tracking NVIDIA's 0.0.x line unbounded across an
-# API break. SandboxClient.create/get/delete/list/wait_* took a required
-# workspace= kwarg starting in 0.0.88; this collection now always passes it.
-OPENSHELL_SDK_SPEC = "openshell>=0.0.116,<0.0.120"
+# Bounded range, not a floating latest. 0.1.3 is current PyPI stable
+# (2026-10-09). <0.2 stays on the 0.1 line: 0.0.116 encodes
+# CreateSandboxRequest fields the 0.1 gateway rejects, and an earlier
+# 0.0.x release already broke SandboxClient by adding workspace.
+# SandboxClient.create/get/delete/list/wait_* take a required
+# workspace= kwarg; this collection always passes it.
+OPENSHELL_SDK_SPEC = "openshell>=0.1.3,<0.2"
 
 GATEWAY_ARGSPEC = dict(
     gateway=dict(
@@ -58,7 +59,7 @@ GATEWAY_ARGSPEC = dict(
 )
 
 
-# Numeric values match openshell.v1.SandboxPhase in the 0.0.116 proto.
+# Numeric values match openshell.v1.SandboxPhase in the 0.1.3 proto.
 # STOPPING/STOPPED/STARTING landed after 0.0.90 (sandbox start/stop).
 PHASE_NAMES = {
     0: "UNSPECIFIED",

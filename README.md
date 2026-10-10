@@ -17,7 +17,7 @@ the other.
 ## Requirements
 
 ```
-pip install 'openshell>=0.0.116,<0.0.120'
+pip install 'openshell>=0.1.3,<0.2'
 ```
 
 Install the collection itself from Galaxy (`ansible-galaxy collection install
@@ -26,14 +26,16 @@ aknochow.openshell`) or, in a venv, as a pip wheel that lands on Ansible's
 name is `aknochow-openshell`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
 wheel layout and a two-collection smoke test.
 
-**Version pin matters.** NVIDIA's `openshell` 0.0.x line still ships
-breaking Python API changes in patch releases. `SandboxClient.get()` /
-`.create()` / `.delete()` / `.list()` / `.wait_ready()` require a
-`workspace` keyword argument since 0.0.88; this collection always
-passes it (module option `workspace`, env `OPENSHELL_WORKSPACE`,
-default `""` which current gateways map to the `default` workspace).
-Stay inside the bounded range above — do not install an unpinned
-latest. Current PyPI stable as of this pin is 0.0.116.
+**Version pin matters.** `SandboxClient.get()` / `.create()` /
+`.delete()` / `.list()` / `.wait_ready()` require a `workspace`
+keyword argument; this collection always passes it (module option
+`workspace`, env `OPENSHELL_WORKSPACE`, default `""` which current
+gateways map to the `default` workspace). Stay inside the bounded
+range above — do not install an unpinned latest. Current PyPI stable
+as of this pin is 0.1.3. Plaibook records how this range relates
+to the gateway installer and the review sandbox image in
+[docs/dependency-map.md](https://github.com/aknochow/ansible-plaibook/blob/main/docs/dependency-map.md).
+This collection does not copy that matrix.
 
 - Python ≥ 3.11 (matches the `openshell` SDK's own floor)
 - `ansible-core` ≥ 2.16 (`< 2.19`, see `pyproject.toml`)
@@ -256,10 +258,11 @@ development — the fix is in `stdin_reader()`.
 ## Known gaps
 
 - **SDK version pin required** (see [Requirements](#requirements)) —
-  stay on `openshell>=0.0.116,<0.0.120`. The 0.0.x line has already
-  broken the Python API once (the `workspace` kwarg at 0.0.88/0.0.9x);
-  this collection now passes `workspace`, but a future 0.0.12x change
-  could still shift method signatures or proto layout.
+  stay on `openshell>=0.1.3,<0.2`. The 0.0 line encodes sandbox
+  requests the 0.1 gateway rejects, and it already broke
+  `SandboxClient` once (the `workspace` kwarg). `<0.2` stops a later
+  major from moving method signatures or proto layout under this
+  collection.
 - **`provider` module uses raw gRPC stubs**, not the official SDK — the
   SDK doesn't wrap Provider CRUD RPCs at all (confirmed by inspecting
   the SDK source; only `SandboxClient`'s documented methods are
@@ -280,7 +283,7 @@ development — the fix is in `stdin_reader()`.
 
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
-pip install ansible-core 'openshell>=0.0.116,<0.0.120'
+pip install ansible-core 'openshell>=0.1.3,<0.2'
 ansible-galaxy collection install . --force
 python -m pytest tests/unit/
 ```

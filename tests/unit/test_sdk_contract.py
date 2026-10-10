@@ -29,9 +29,9 @@ def test_create_get_delete_list_wait_require_workspace_kwarg():
 
 def test_exec_and_health_signatures():
     exec_params = inspect.signature(SandboxClient.exec).parameters
-    # exec is id-scoped, not workspace-scoped, matching sandbox_exec.py.
-    assert list(exec_params)[1] == "sandbox_id"
-    assert "workspace" not in exec_params
+    # 0.1 exec is name-scoped and requires keyword-only workspace.
+    assert list(exec_params)[1] == "sandbox"
+    assert exec_params["workspace"].kind is inspect.Parameter.KEYWORD_ONLY
     assert list(inspect.signature(SandboxClient.health).parameters) == ["self"]
 
 
@@ -47,6 +47,12 @@ def test_proto_types_used_by_modules_still_exist():
     assert hasattr(openshell_pb2, "SandboxTemplate")
     assert hasattr(openshell_pb2, "CreateSshSessionRequest")
     assert hasattr(openshell_pb2, "TcpForwardFrame")
+    session_fields = openshell_pb2.CreateSshSessionRequest.DESCRIPTOR.fields_by_name
+    assert "sandbox" in session_fields
+    assert "workspace_scope" in session_fields
+    init_fields = openshell_pb2.TcpForwardInit.DESCRIPTOR.fields_by_name
+    assert "sandbox" in init_fields
+    assert "workspace" in init_fields
     assert hasattr(sandbox_pb2, "SandboxPolicy")
     assert hasattr(sandbox_pb2, "FilesystemPolicy")
     assert hasattr(datamodel_pb2, "Provider")
@@ -55,6 +61,6 @@ def test_proto_types_used_by_modules_still_exist():
 
 def test_collection_pin_matches_installed_sdk():
     installed = Version(version("openshell"))
-    assert OPENSHELL_SDK_SPEC == "openshell>=0.0.116,<0.0.120"
-    assert installed >= Version("0.0.116")
-    assert installed < Version("0.0.120")
+    assert OPENSHELL_SDK_SPEC == "openshell>=0.1.3,<0.2"
+    assert installed >= Version("0.1.3")
+    assert installed < Version("0.2.0")
