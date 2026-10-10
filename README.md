@@ -32,7 +32,10 @@ keyword argument; this collection always passes it (module option
 `workspace`, env `OPENSHELL_WORKSPACE`, default `""` which current
 gateways map to the `default` workspace). Stay inside the bounded
 range above — do not install an unpinned latest. Current PyPI stable
-as of this pin is 0.1.3.
+as of this pin is 0.1.3. Plaibook records how this range relates
+to the gateway installer and the review sandbox image in
+[docs/dependency-map.md](https://github.com/aknochow/ansible-plaibook/blob/main/docs/dependency-map.md).
+This collection does not copy that matrix.
 
 - Python ≥ 3.11 (matches the `openshell` SDK's own floor)
 - `ansible-core` ≥ 2.16 (`< 2.19`, see `pyproject.toml`)

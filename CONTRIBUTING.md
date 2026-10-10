@@ -57,6 +57,16 @@ Do not upload to PyPI unless a release explicitly says so. Galaxy tarballs
 remain the AAP channel (`ansible-galaxy collection build`).
 
 
+## Dependency map
+
+This collection's Python SDK range is `OPENSHELL_SDK_SPEC` in
+`plugins/module_utils/openshell_client.py`, `requirements.txt`, and
+`pyproject.toml`. Plaibook's cross-project pin map, including the
+gateway installer and the sandbox image, is
+[docs/dependency-map.md](https://github.com/aknochow/ansible-plaibook/blob/main/docs/dependency-map.md).
+Update that row in the plaibook repository in the same change that
+publishes a new range. Do not paste a second copy here.
+
 ## Branch names
 
 The branch name says what the change is. Use one conventional prefix and a short description:
