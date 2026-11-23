@@ -10,7 +10,7 @@ from ansible.module_utils.basic import AnsibleModule, env_fallback
 from .tls import build_tls_config
 
 # Bounded range, not a floating latest. 0.1.3 is the oldest supported
-# release. 0.1.6 is current PyPI stable (2026-11-02) and what the
+# release. 0.1.9 is current PyPI stable (2026-11-17) and what the
 # development lock tests. <0.2 stays on the 0.1 line: 0.0.116 encodes
 # CreateSandboxRequest fields the 0.1 gateway rejects, and an earlier
 # 0.0.x release already broke SandboxClient by adding workspace.
